@@ -246,13 +246,156 @@ class XiaoPandaSource extends MusicSource {
 }
 
 // ============================================
-// 全局单例
+// 全局单例（支持自定义源）
 // ============================================
-MusicSource? _source;
+XiaoPandaSource? _defaultSource;
 
+Future<MusicSource> getMusicSourceAsync() async {
+  // 从存储加载自定义源
+  final store = await storage;
+  final customSources = store.getMusicSources();
+
+  if (customSources.isNotEmpty) {
+    // 有自定义源时使用聚合源
+    final sources = <MusicSource>[
+      if (_defaultSource == null) _defaultSource = XiaoPandaSource(),
+      _defaultSource!,
+      for (final s in customSources)
+        CustomApiSource(
+          name: s['name'] ?? '自定义源',
+          searchUrl: '${s['url'] ?? ''}/search?key={keyword}&page={page}&limit={limit}',
+          playUrl: '${s['url'] ?? ''}/url?id={id}&quality={quality}',
+          lyricUrl: '${s['url'] ?? ''}/lyric?id={id}',
+        ),
+    ];
+    return AggregateSource(sources);
+  }
+  _defaultSource ??= XiaoPandaSource();
+  return _defaultSource!;
+}
+
+/// 同步获取（用于不依赖自定义源的场景）
 MusicSource get musicSource {
-  _source ??= XiaoPandaSource();
-  return _source!;
+  _defaultSource ??= XiaoPandaSource();
+  return _defaultSource!;
+}
+
+/// ============================================
+/// 自定义API源
+/// ============================================
+class CustomApiSource extends MusicSource {
+  final String _name;
+  final String _searchUrl;
+  final String _playUrl;
+  final String _lyricUrl;
+
+  CustomApiSource({
+    required String name,
+    required String searchUrl,
+    required String playUrl,
+    required String lyricUrl,
+  })  : _name = name,
+        _searchUrl = searchUrl,
+        _playUrl = playUrl,
+        _lyricUrl = lyricUrl;
+
+  @override
+  String get name => _name;
+
+  @override
+  String get baseUrl => _searchUrl;
+
+  @override
+  Future<List<OnlineSong>> search(String keyword, {int page = 1, int limit = 20}) async {
+    final url = _searchUrl
+        .replaceAll('{keyword}', Uri.encodeComponent(keyword))
+        .replaceAll('{page}', page.toString())
+        .replaceAll('{limit}', limit.toString());
+    final resp = await http.get(Uri.parse(url),
+        headers: XiaoPandaSource._headers()).timeout(const Duration(seconds: 10));
+    if (resp.statusCode != 200) return [];
+    final data = jsonDecode(resp.body);
+    final list = (data['data'] ?? data['list'] ?? data['result'] ?? []) as List;
+    return list.map((e) => OnlineSong.fromJson(e as Map<String, dynamic>, source: _name)).toList();
+  }
+
+  @override
+  Future<String?> getPlayUrl(OnlineSong song, {String quality = '320'}) async {
+    final url = _playUrl
+        .replaceAll('{id}', song.id)
+        .replaceAll('{quality}', quality);
+    final resp = await http.get(Uri.parse(url),
+        headers: XiaoPandaSource._headers()).timeout(const Duration(seconds: 8));
+    if (resp.statusCode != 200) return null;
+    final data = jsonDecode(resp.body);
+    return data['url'] ?? data['data']?['url'] ?? data['playUrl'];
+  }
+
+  @override
+  Future<String?> getLyric(OnlineSong song) async {
+    final url = _lyricUrl.replaceAll('{id}', song.id);
+    final resp = await http.get(Uri.parse(url),
+        headers: XiaoPandaSource._headers()).timeout(const Duration(seconds: 6));
+    if (resp.statusCode != 200) return null;
+    final data = jsonDecode(resp.body);
+    return data['lyric'] ?? data['lrc'] ?? data['data']?['lyric'];
+  }
+
+  @override
+  Future<String?> getCoverUrl(OnlineSong song) async => song.coverUrl;
+}
+
+/// ============================================
+/// 聚合源（多源并发搜索）
+/// ============================================
+class AggregateSource extends MusicSource {
+  final List<MusicSource> _sources;
+
+  AggregateSource(this._sources);
+
+  @override
+  String get name => _sources.map((s) => s.name).join('+');
+
+  @override
+  String get baseUrl => '';
+
+  @override
+  Future<List<OnlineSong>> search(String keyword, {int page = 1, int limit = 20}) async {
+    final results = <OnlineSong>[];
+    for (final src in _sources) {
+      try {
+        final songs = await src.search(keyword, page: page, limit: limit);
+        results.addAll(songs);
+      } catch (_) {}
+      if (results.isNotEmpty) break; // 第一个成功就返回
+    }
+    return results;
+  }
+
+  @override
+  Future<String?> getPlayUrl(OnlineSong song, {String quality = '320'}) async {
+    for (final src in _sources) {
+      try {
+        final url = await src.getPlayUrl(song, quality: quality);
+        if (url != null && url.startsWith('http')) return url;
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  @override
+  Future<String?> getLyric(OnlineSong song) async {
+    for (final src in _sources) {
+      try {
+        final lrc = await src.getLyric(song);
+        if (lrc != null && lrc.isNotEmpty) return lrc;
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  @override
+  Future<String?> getCoverUrl(OnlineSong song) async => song.coverUrl;
 }
 
 /// ============================================

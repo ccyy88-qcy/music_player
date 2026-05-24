@@ -15,6 +15,7 @@ class StorageManager {
   static const _keySleepMinutes = 'sleep_minutes';
   static const _keyEqPreset = 'eq_preset';
   static const _keySpeed = 'playback_speed';
+  static const _keyMusicSources = 'music_sources'; // 自定义音乐源JSON列表
 
   static StorageManager? _instance;
   late SharedPreferences _prefs;
@@ -157,6 +158,41 @@ class StorageManager {
   double get playbackSpeed => _prefs.getDouble(_keySpeed) ?? 1.0;
   Future<void> setPlaybackSpeed(double speed) async {
     await _prefs.setDouble(_keySpeed, speed);
+  }
+
+  // ─────────── 音乐源管理 ───────────
+
+  /// 获取所有自定义音乐源
+  List<Map<String, String>> getMusicSources() {
+    final jsonStr = _prefs.getString(_keyMusicSources);
+    if (jsonStr == null || jsonStr.isEmpty) return [];
+    try {
+      final list = jsonDecode(jsonStr) as List;
+      return list.map((e) => Map<String, String>.from(e as Map)).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// 保存音乐源列表
+  Future<void> saveMusicSources(List<Map<String, String>> sources) async {
+    await _prefs.setString(_keyMusicSources, jsonEncode(sources));
+  }
+
+  /// 添加音乐源
+  Future<void> addMusicSource(String name, String apiUrl) async {
+    final sources = getMusicSources();
+    sources.add({'name': name, 'url': apiUrl});
+    await saveMusicSources(sources);
+  }
+
+  /// 删除音乐源
+  Future<void> removeMusicSource(int index) async {
+    final sources = getMusicSources();
+    if (index >= 0 && index < sources.length) {
+      sources.removeAt(index);
+      await saveMusicSources(sources);
+    }
   }
 
   // ─────────── 清理 ───────────

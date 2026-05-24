@@ -26,6 +26,19 @@ class _OnlineScreenState extends State<OnlineScreen> {
   String? _playingId;
   Set<String> _downloadingIds = {};
   Map<String, double> _downloadProgress = {};
+  MusicSource? _source;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchCtrl.addListener(() {});
+    _initSource();
+  }
+
+  Future<void> _initSource() async {
+    _source = await getMusicSourceAsync();
+    if (mounted) setState(() {});
+  }
 
   @override
   void dispose() {
@@ -51,7 +64,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
 
     try {
       final songs =
-          await musicSource.search(keyword, page: _page, limit: 20);
+          await _source!.search(keyword, page: _page, limit: 20);
       setState(() {
         if (loadMore) {
           _results.addAll(songs);
@@ -78,7 +91,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
     setState(() => _playingId = song.id);
 
     // 获取播放URL
-    final playUrl = await musicSource.getPlayUrl(song);
+    final playUrl = await _source!.getPlayUrl(song);
     if (playUrl == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -92,7 +105,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
     // 获取歌词
     String? lrcText;
     try {
-      lrcText = await musicSource.getLyric(song);
+      lrcText = await _source!.getLyric(song);
     } catch (_) {}
 
     // 创建临时 Song 对象用于播放
@@ -135,7 +148,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
       _downloadProgress[song.id] = 0;
     });
 
-    final playUrl = await musicSource.getPlayUrl(song);
+    final playUrl = await _source!.getPlayUrl(song);
     if (playUrl == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -242,7 +255,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
                   size: 14, color: Colors.green.withValues(alpha: 0.7)),
               const SizedBox(width: 4),
               Text(
-                musicSource.name,
+                _source!.name,
                 style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.35), fontSize: 11),
               ),
