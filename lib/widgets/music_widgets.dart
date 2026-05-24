@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:just_audio/just_audio.dart';
 import '../models/song.dart';
 import '../services/audio_player.dart';
 
@@ -82,10 +83,10 @@ class MiniPlayer extends StatelessWidget {
               ),
             ),
             // 播放控制
-            StreamBuilder<PlayerState>(
-              stream: audioService.player.playerStateStream,
+            StreamBuilder<bool>(
+              stream: audioService.player.playingStream,
               builder: (context, snapshot) {
-                final playing = snapshot.data?.playing ?? false;
+                final playing = snapshot.data ?? false;
                 return IconButton(
                   icon: Icon(
                     playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
