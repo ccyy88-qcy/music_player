@@ -192,22 +192,8 @@ class AudioPlayerService {
   }
 
   void _applyEqPreset() {
-    // just_audio 均衡器通过 Android 原生支持，此处为预设标记
-    // 实际均衡器需要平台通道，当前版本仅做视觉标识
-    try {
-      switch (_eqPreset) {
-        case EqPreset.djBass:
-        case EqPreset.heavyBass:
-          _player.setAndroidAudioEffects(const AndroidAudioEffects(
-            bassBoost: 0.8,
-          ));
-          break;
-        default:
-          _player.setAndroidAudioEffects(const AndroidAudioEffects(
-            bassBoost: 0.0,
-          ));
-      }
-    } catch (_) {}
+    // EQ 预设仅做 UI 视觉标识，实际音效需要平台通道
+    // Android 均衡器可通过 android_audio_effects 包实现
   }
 
   String get eqPresetLabel {
