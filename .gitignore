@@ -1,0 +1,17 @@
+# Flutter
+.dart_tool/
+.packages
+build/
+*.iml
+.idea/
+.metadata
+
+# Android
+*.apk
+*.aab
+*.keystore
+!android/app/src/main/res/drawable/ic_launcher.xml
+
+# Misc
+*.log
+.DS_Store
