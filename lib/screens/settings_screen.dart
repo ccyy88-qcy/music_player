@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:io';
 import '../services/storage_manager.dart';
 import '../services/music_scanner.dart';
 import '../services/online_music_service.dart';
@@ -159,9 +160,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ListTile(
               leading: const Icon(Icons.add_link_rounded, color: Colors.green),
               title: const Text('添加API源', style: TextStyle(color: Colors.green, fontSize: 14)),
-              subtitle: const Text('输入API地址（支持{keyword}等占位符）',
+              subtitle: const Text('输入API根地址（支持占位符）',
                   style: TextStyle(color: Colors.white30, fontSize: 11)),
               onTap: _addSourceDialog,
+            ),
+            ListTile(
+              leading: const Icon(Icons.upload_file_rounded, color: Colors.amber, size: 22),
+              title: const Text('📄 导入JS源文件', style: TextStyle(color: Colors.amber, fontSize: 14)),
+              subtitle: const Text('粘贴小熊猫JS源文件路径，自动提取API地址',
+                  style: TextStyle(color: Colors.white30, fontSize: 11)),
+              onTap: _importJsSource,
+            ),
+            ListTile(
+              leading: const Icon(Icons.folder_search_rounded, color: Colors.blue, size: 22),
+              title: const Text('🔍 扫描下载目录', style: TextStyle(color: Colors.blue, fontSize: 14)),
+              subtitle: const Text('自动扫描Download目录中的.js源文件',
+                  style: TextStyle(color: Colors.white30, fontSize: 11)),
+              onTap: _scanForSourceFiles,
+            ),
+            ListTile(
+              leading: const Icon(Icons.auto_awesome_rounded, color: Colors.purple, size: 22),
+              title: const Text('✨ 一键添加内置源', style: TextStyle(color: Colors.purple, fontSize: 14)),
+              subtitle: const Text('预置小熊猫/聚合音乐API源',
+                  style: TextStyle(color: Colors.white30, fontSize: 11)),
+              onTap: _addBuiltinSources,
             ),
             ListTile(
               leading: const Icon(Icons.info_outline_rounded, color: Colors.white38, size: 20),
@@ -401,6 +423,150 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
+  }
+
+  // ─────── JS导入 + 内置源 ───────
+
+  Future<void> _importJsSource() async {
+    final pathCtrl = TextEditingController();
+    final contentCtrl = TextEditingController();
+
+    final result = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A2E),
+        title: const Text('📄 导入JS源文件', style: TextStyle(color: Colors.white)),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: pathCtrl,
+                style: const TextStyle(color: Colors.white, fontSize: 13),
+                decoration: InputDecoration(
+                  hintText: '文件路径（如：/storage/.../source.js）',
+                  hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
+                  filled: true, fillColor: Colors.white.withValues(alpha: 0.05),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text('— 或者直接粘贴JS内容 —', style: TextStyle(color: Colors.white.withValues(alpha: 0.2), fontSize: 11)),
+              const SizedBox(height: 8),
+              TextField(
+                controller: contentCtrl,
+                maxLines: 6,
+                style: const TextStyle(color: Colors.white, fontSize: 12, fontFamily: 'monospace'),
+                decoration: InputDecoration(
+                  hintText: 'var config = { name: "源名", ... }',
+                  hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.2)),
+                  filled: true, fillColor: Colors.white.withValues(alpha: 0.05),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消', style: TextStyle(color: Colors.white54))),
+          TextButton(onPressed: () => Navigator.pop(ctx, {'path': pathCtrl.text.trim(), 'content': contentCtrl.text}), child: const Text('导入', style: TextStyle(color: Colors.amber))),
+        ],
+      ),
+    );
+
+    if (result == null) return;
+    String jsContent = result['content'] ?? '';
+    // 如果提供了路径，读取文件
+    if (result['path']!.isNotEmpty) {
+      try {
+        final file = File(result['path']!);
+        if (file.existsSync()) {
+          jsContent = file.readAsStringSync();
+        }
+      } catch (_) {}
+    }
+    if (jsContent.isEmpty) return;
+
+    final sources = parseJsSource(jsContent);
+    if (sources.isEmpty) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('未能从文件中提取API地址'), backgroundColor: Colors.orange));
+      return;
+    }
+
+    for (final s in sources) {
+      await _store.addMusicSource(s['name']!, s['url']!);
+    }
+    _refreshSources();
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('✅ 已导入 ${sources.length} 个源'), backgroundColor: Colors.green));
+  }
+
+  Future<void> _scanForSourceFiles() async {
+    final scanDirs = ['/storage/emulated/0/Download', '/storage/emulated/0/Documents'];
+    final foundSources = <Map<String, String>>[];
+
+    for (final dir in scanDirs) {
+      final d = Directory(dir);
+      if (!d.existsSync()) continue;
+      try {
+        for (final entity in d.listSync(recursive: true)) {
+          if (entity is File) {
+            final name = entity.path.toLowerCase();
+            if (name.endsWith('.js') || name.endsWith('.json') || name.endsWith('.txt')) {
+              try {
+                final content = entity.readAsStringSync();
+                final parsed = parseJsSource(content);
+                foundSources.addAll(parsed);
+              } catch (_) {}
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (foundSources.isEmpty) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('未在下载目录找到可导入的源文件'), backgroundColor: Colors.orange));
+      return;
+    }
+
+    // 去重
+    final seen = <String>{};
+    final unique = <Map<String, String>>[];
+    for (final s in foundSources) {
+      if (!seen.contains(s['url'])) {
+        seen.add(s['url']!);
+        unique.add(s);
+      }
+    }
+
+    for (final s in unique) {
+      await _store.addMusicSource(s['name']!, s['url']!);
+    }
+    _refreshSources();
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('✅ 扫描到 ${unique.length} 个源'), backgroundColor: Colors.green));
+  }
+
+  Future<void> _addBuiltinSources() async {
+    final builtin = [
+      {'name': '小熊猫搜索', 'url': 'https://api.xmp3.cc'},
+      {'name': '小熊猫备用', 'url': 'https://api.itooi.cn/music/tencent'},
+      {'name': '聚合搜索1', 'url': 'https://api.uomg.com/api'},
+      {'name': '免费音乐1', 'url': 'https://api.injahow.cn/meting'},
+      {'name': '免费音乐2', 'url': 'https://api.music.ghser.com'},
+    ];
+
+    final existing = _store.getMusicSources();
+    final existingUrls = existing.map((e) => e['url']).toSet();
+
+    var added = 0;
+    for (final s in builtin) {
+      if (!existingUrls.contains(s['url'])) {
+        await _store.addMusicSource(s['name']!, s['url']!);
+        added++;
+      }
+    }
+
+    _refreshSources();
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(added > 0 ? '✅ 已添加 $added 个内置源' : '内置源已全部存在'), backgroundColor: added > 0 ? Colors.green : Colors.blueGrey)));
   }
 
   void _confirmClear() {

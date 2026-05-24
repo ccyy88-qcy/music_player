@@ -467,3 +467,50 @@ class DownloadManager {
     }
   }
 }
+
+/// ============================================
+/// JS源文件解析器 — 从JS源文件中提取API URL
+/// ============================================
+
+/// 从小熊猫风格JS源文件中提取 API 配置
+List<Map<String, String>> parseJsSource(String content) {
+  final sources = <Map<String, String>>[];
+
+  // 模式1: var/const 配置对象
+  final nameRe = RegExp(r'''['"]name['"]\s*[:=]\s*['"]([^'"]+)['"]''');
+  final urlRe = RegExp(r'''https?://[^\s'"`\[\]{}()<>]+\.[^\s'"`\[\]{}()<>]+''');
+
+  // 提取所有URL
+  final urls = urlRe.allMatches(content).map((m) => m.group(0)!).toSet();
+
+  // 提取名称
+  String name = '导入源';
+  final nameMatch = nameRe.firstMatch(content);
+  if (nameMatch != null) {
+    name = nameMatch.group(1)!;
+  }
+
+  // 对每个找到的API URL，尝试作为源
+  for (final url in urls) {
+    // 过滤明显不是API的URL
+    if (url.contains('github.com') || url.contains('example.com') ||
+        url.contains('localhost') || url.contains('127.0.0.1')) continue;
+
+    // 提取根URL（去掉路径部分，保留到域名+第一段路径）
+    final uri = Uri.tryParse(url);
+    if (uri == null) continue;
+    final rootUrl = '${uri.scheme}://${uri.host}';
+    // 如果路径有 /api 之类，保留第一段
+    final segments = uri.pathSegments;
+    if (segments.isNotEmpty && segments.first.isNotEmpty) {
+      final base = '$rootUrl/${segments.first}';
+      sources.add({'name': name, 'url': base});
+    } else {
+      sources.add({'name': name, 'url': rootUrl});
+    }
+  }
+
+  // 去重
+  final seen = <String>{};
+  return sources.where((s) => seen.add(s['url']!)).toList();
+}
