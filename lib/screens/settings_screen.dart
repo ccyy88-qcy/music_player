@@ -172,7 +172,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               onTap: _importJsSource,
             ),
             ListTile(
-              leading: const Icon(Icons.folder_search_rounded, color: Colors.blue, size: 22),
+              leading: const Icon(Icons.folder_open_rounded, color: Colors.blue, size: 22),
               title: const Text('🔍 扫描下载目录', style: TextStyle(color: Colors.blue, fontSize: 14)),
               subtitle: const Text('自动扫描Download目录中的.js源文件',
                   style: TextStyle(color: Colors.white30, fontSize: 11)),
@@ -566,7 +566,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
 
     _refreshSources();
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(added > 0 ? '✅ 已添加 $added 个内置源' : '内置源已全部存在'), backgroundColor: added > 0 ? Colors.green : Colors.blueGrey)));
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(added > 0 ? '✅ 已添加 $added 个内置源' : '内置源已全部存在'),
+      backgroundColor: added > 0 ? Colors.green : Colors.blueGrey,
+    ));
   }
 
   void _confirmClear() {

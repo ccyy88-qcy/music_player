@@ -16,7 +16,6 @@ void main() async {
   );
 
   audioHandler = AudioPlayerHandler();
-  await audioHandler.start();
 
   runApp(const MusicPlayerApp());
 }

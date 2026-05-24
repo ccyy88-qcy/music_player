@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import '../models/song.dart';
+import 'storage_manager.dart';
 
 /// 在线歌曲数据
 class OnlineSong {

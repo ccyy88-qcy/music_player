@@ -328,20 +328,9 @@ class AudioPlayerHandler extends BaseAudioHandler
   }
 
   @override
-  Future<void> onTaskRemoved() async {
-    // Android 从最近任务移除时的处理
-    // 如果正在播放则不停止
-    if (!_player.playing) {
-      await _player.dispose();
-      await super.onTaskRemoved();
-    }
-  }
-
-  @override
   Future<void> dispose() async {
     _sleepTimer?.cancel();
     await _player.dispose();
-    await super.dispose();
   }
 }
 
