@@ -1,0 +1,326 @@
+import 'dart:convert';
+import 'dart:io';
+import 'package:http/http.dart' as http;
+import '../models/song.dart';
+
+/// 在线歌曲数据
+class OnlineSong {
+  final String id;          // 平台歌曲ID
+  final String title;
+  final String artist;
+  final String album;
+  final String? coverUrl;
+  final String? lyricUrl;
+  final String source;      // 来源平台名
+  final int? duration;
+
+  const OnlineSong({
+    required this.id,
+    required this.title,
+    required this.artist,
+    this.album = '',
+    this.coverUrl,
+    this.lyricUrl,
+    this.source = '',
+    this.duration,
+  });
+
+  factory OnlineSong.fromJson(Map<String, dynamic> json, {String source = ''}) {
+    return OnlineSong(
+      id: (json['id'] ?? json['songid'] ?? json['song_id'] ?? '').toString(),
+      title: (json['title'] ?? json['name'] ?? json['songname'] ?? '').toString(),
+      artist: (json['artist'] ?? json['author'] ?? json['singer'] ?? '').toString(),
+      album: (json['album'] ?? json['albumname'] ?? '').toString(),
+      coverUrl: json['cover'] ?? json['pic'] ?? json['coverUrl'],
+      lyricUrl: json['lyric'] ?? json['lrcurl'] ?? json['lyricUrl'],
+      source: source,
+      duration: json['duration'] is int
+          ? json['duration']
+          : int.tryParse((json['duration'] ?? '0').toString()),
+    );
+  }
+}
+
+/// 音乐源接口
+abstract class MusicSource {
+  String get name;
+  String get baseUrl;
+
+  /// 搜索歌曲
+  Future<List<OnlineSong>> search(String keyword, {int page = 1, int limit = 20});
+
+  /// 获取播放URL
+  Future<String?> getPlayUrl(OnlineSong song, {String quality = '320'});
+
+  /// 获取歌词
+  Future<String?> getLyric(OnlineSong song);
+
+  /// 获取封面图
+  Future<String?> getCoverUrl(OnlineSong song);
+}
+
+/// ============================================
+/// 小熊猫风格音乐源 (免费API聚合)
+/// 兼容主流格式：网易云/QQ/酷狗/酷我等解析接口
+/// ============================================
+class XiaoPandaSource extends MusicSource {
+  final String _apiUrl;
+
+  XiaoPandaSource({String apiUrl = ''}) : _apiUrl = apiUrl;
+
+  @override
+  String get name => '小熊猫音乐';
+
+  @override
+  String get baseUrl => _apiUrl;
+
+  /// 内置多源降级搜索
+  @override
+  Future<List<OnlineSong>> search(String keyword,
+      {int page = 1, int limit = 20}) async {
+    final results = <OnlineSong>[];
+
+    // 源1: 通用音乐搜索API (JSONP风格)
+    try {
+      final songs = await _searchSource1(keyword, page, limit);
+      results.addAll(songs);
+    } catch (_) {}
+
+    // 源2: 备用搜索API
+    if (results.isEmpty) {
+      try {
+        final songs = await _searchSource2(keyword, page, limit);
+        results.addAll(songs);
+      } catch (_) {}
+    }
+
+    return results;
+  }
+
+  /// 源1 - 通用免费音乐搜索API
+  Future<List<OnlineSong>> _searchSource1(
+      String keyword, int page, int limit) async {
+    final query = Uri.encodeComponent(keyword);
+    final url = 'https://api.xmp3.cc/search?key=$query&page=$page&limit=$limit';
+
+    final resp = await http.get(
+      Uri.parse(url),
+      headers: _headers(),
+    ).timeout(const Duration(seconds: 10));
+
+    if (resp.statusCode != 200) return [];
+
+    final data = jsonDecode(resp.body);
+    final list = (data['data'] ?? data['list'] ?? data['result'] ?? []) as List;
+
+    return list.map((item) {
+      final song = OnlineSong.fromJson(item as Map<String, dynamic>, source: '源1');
+      return song;
+    }).toList();
+  }
+
+  /// 源2 - 备用API
+  Future<List<OnlineSong>> _searchSource2(
+      String keyword, int page, int limit) async {
+    final query = Uri.encodeComponent(keyword);
+    final url =
+        'https://api.itooi.cn/music/tencent/search?keyword=$query&page=$page&limit=$limit';
+
+    final resp = await http.get(
+      Uri.parse(url),
+      headers: _headers(),
+    ).timeout(const Duration(seconds: 10));
+
+    if (resp.statusCode != 200) return [];
+
+    final data = jsonDecode(resp.body);
+    final list = (data['data'] ?? data['list'] ?? data['result'] ?? []) as List;
+
+    return list.map((item) {
+      return OnlineSong.fromJson(item as Map<String, dynamic>, source: '源2');
+    }).toList();
+  }
+
+  /// 获取播放URL
+  @override
+  Future<String?> getPlayUrl(OnlineSong song,
+      {String quality = '320'}) async {
+    // 尝试多个解析源
+    for (final resolver in _resolvers) {
+      try {
+        final url = await resolver(song.id, quality);
+        if (url != null && url.isNotEmpty && url.startsWith('http')) {
+          return url;
+        }
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  /// 多源URL解析器
+  final List<Future<String?> Function(String id, String quality)> _resolvers = [
+    _resolveUrl1,
+    _resolveUrl2,
+    _resolveUrl3,
+  ];
+
+  static Future<String?> _resolveUrl1(String id, String quality) async {
+    final url =
+        'https://api.xmp3.cc/url?id=$id&quality=$quality';
+    final resp = await http.get(Uri.parse(url),
+        headers: _headers()).timeout(const Duration(seconds: 8));
+    if (resp.statusCode != 200) return null;
+    final data = jsonDecode(resp.body);
+    return data['url'] ?? data['data']?['url'] ?? data['playUrl'];
+  }
+
+  static Future<String?> _resolveUrl2(String id, String quality) async {
+    final url =
+        'https://api.itooi.cn/music/tencent/url?id=$id&quality=$quality';
+    final resp = await http.get(Uri.parse(url),
+        headers: _headers()).timeout(const Duration(seconds: 8));
+    if (resp.statusCode != 200) return null;
+    final data = jsonDecode(resp.body);
+    return data['url'] ?? data['data']?['url'] ?? data['playUrl'];
+  }
+
+  static Future<String?> _resolveUrl3(String id, String quality) async {
+    final url =
+        'https://api.uomg.com/api/get.music.tencent?id=$id';
+    final resp = await http.get(Uri.parse(url),
+        headers: _headers()).timeout(const Duration(seconds: 8));
+    if (resp.statusCode != 200) return null;
+    final data = jsonDecode(resp.body);
+    return data['url'] ?? data['data']?['url'];
+  }
+
+  /// 获取歌词
+  @override
+  Future<String?> getLyric(OnlineSong song) async {
+    for (final lyricFetcher in _lyricFetchers) {
+      try {
+        final lrc = await lyricFetcher(song.id);
+        if (lrc != null && lrc.isNotEmpty) return lrc;
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  final List<Future<String?> Function(String id)> _lyricFetchers = [
+    _fetchLyric1,
+    _fetchLyric2,
+  ];
+
+  static Future<String?> _fetchLyric1(String id) async {
+    final url = 'https://api.xmp3.cc/lyric?id=$id';
+    final resp = await http.get(Uri.parse(url),
+        headers: _headers()).timeout(const Duration(seconds: 6));
+    if (resp.statusCode != 200) return null;
+    final data = jsonDecode(resp.body);
+    return data['lyric'] ?? data['lrc'] ?? data['data']?['lyric'];
+  }
+
+  static Future<String?> _fetchLyric2(String id) async {
+    final url = 'https://api.itooi.cn/music/tencent/lrc?id=$id';
+    final resp = await http.get(Uri.parse(url),
+        headers: _headers()).timeout(const Duration(seconds: 6));
+    if (resp.statusCode != 200) return null;
+    final data = jsonDecode(resp.body);
+    return data['lyric'] ?? data['lrc'] ?? data['data']?['lyric'];
+  }
+
+  /// 获取封面（在线源通常自带，这里提供兜底）
+  @override
+  Future<String?> getCoverUrl(OnlineSong song) async {
+    if (song.coverUrl != null && song.coverUrl!.isNotEmpty) {
+      return song.coverUrl;
+    }
+    return null;
+  }
+
+  static Map<String, String> _headers() => {
+    'Accept': 'application/json',
+    'User-Agent':
+        'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+  };
+}
+
+// ============================================
+// 全局单例
+// ============================================
+MusicSource? _source;
+
+MusicSource get musicSource {
+  _source ??= XiaoPandaSource();
+  return _source!;
+}
+
+/// ============================================
+/// 下载管理器
+/// ============================================
+class DownloadManager {
+  static Future<String?> downloadSong(
+    OnlineSong song,
+    String playUrl,
+    String saveDir,
+  ) async {
+    try {
+      final dir = Directory(saveDir);
+      if (!dir.existsSync()) dir.createSync(recursive: true);
+
+      // 清理文件名
+      final safeName = '${song.title} - ${song.artist}'
+          .replaceAll(RegExp(r'[/\\:*?"<>|]'), '_');
+      final filePath = '$saveDir/$safeName.mp3';
+
+      // 检查是否已存在
+      if (File(filePath).existsSync()) return filePath;
+
+      final resp = await http.get(
+        Uri.parse(playUrl),
+        headers: XiaoPandaSource._headers(),
+      ).timeout(const Duration(minutes: 3));
+
+      if (resp.statusCode != 200) return null;
+
+      final file = File(filePath);
+      await file.writeAsBytes(resp.bodyBytes);
+      return filePath;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// 流式下载（大文件友好）
+  static Future<String?> downloadStream(
+    String url,
+    String filePath,
+    void Function(double progress)? onProgress,
+  ) async {
+    try {
+      final request = http.Request('GET', Uri.parse(url));
+      request.headers.addAll(XiaoPandaSource._headers());
+      final streamedResp = await request.send().timeout(const Duration(minutes: 3));
+
+      if (streamedResp.statusCode != 200) return null;
+
+      final totalBytes = streamedResp.contentLength ?? 0;
+      var downloadedBytes = 0;
+      final file = File(filePath);
+      final sink = file.openWrite();
+
+      await for (final chunk in streamedResp.stream) {
+        sink.add(chunk);
+        downloadedBytes += chunk.length;
+        if (totalBytes > 0 && onProgress != null) {
+          onProgress(downloadedBytes / totalBytes);
+        }
+      }
+
+      await sink.close();
+      return filePath;
+    } catch (_) {
+      return null;
+    }
+  }
+}

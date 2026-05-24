@@ -276,6 +276,12 @@ class AudioPlayerService {
     _lyricIndex = LyricParser.findCurrentIndex(_lyrics, position);
   }
 
+  /// 设置在线歌词（从在线源获取的已解析歌词）
+  void setOnlineLyrics(List<LyricLine> lyrics) {
+    _lyrics = lyrics;
+    _lyricIndex = -1;
+  }
+
   // ─────────── 释放 ───────────
 
   void dispose() {

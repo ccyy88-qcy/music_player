@@ -6,6 +6,7 @@ import '../services/storage_manager.dart';
 import '../widgets/music_widgets.dart';
 import 'player_screen.dart';
 import 'settings_screen.dart';
+import 'online_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -32,7 +33,7 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     WidgetsBinding.instance.addObserver(this);
     _initAndScan();
   }
@@ -189,6 +190,7 @@ class _HomeScreenState extends State<HomeScreen>
                   Tab(
                     text: '⭐ 收藏 (${_countFavorites()})',
                   ),
+                  const Tab(text: '🌐 在线'),
                 ],
               ),
             ),
@@ -207,6 +209,7 @@ class _HomeScreenState extends State<HomeScreen>
                               _buildSongList(MusicCategory.dj),
                               _buildSongList(MusicCategory.pop),
                               _buildFavoritesList(),
+                              OnlineScreen(audioService: _audioService),
                             ],
                           ),
           ),
