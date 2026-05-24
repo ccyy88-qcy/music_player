@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:just_audio/just_audio.dart';
 import '../models/song.dart';
 import '../services/audio_player.dart';
 import '../services/lyric_parser.dart';
@@ -20,45 +19,57 @@ class _PlayerScreenState extends State<PlayerScreen>
   StreamSubscription? _positionSub;
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
-  bool _showLyrics = false;
+  bool _showLyrics = true;
+  Timer? _sleepUiTimer;
 
-  // 均衡器动画条
+  // 均衡器动画
   late final AnimationController _eqAnimCtrl;
-  final List<double> _eqBars = List.generate(12, (_) => 0.2);
+  final List<double> _eqBars = List.generate(16, (_) => 0.15);
 
   @override
   void initState() {
     super.initState();
 
-    // 监听播放位置，更新歌词
     _positionSub = widget.audioService.player.positionStream.listen((pos) {
-      setState(() {
-        _position = pos;
-        widget.audioService.updateLyricPosition(pos);
-      });
+      if (mounted) {
+        setState(() {
+          _position = pos;
+          widget.audioService.updateLyricPosition(pos);
+        });
+      }
     });
 
     widget.audioService.player.durationStream.listen((dur) {
       if (mounted) setState(() => _duration = dur ?? Duration.zero);
     });
 
-    // 均衡器动画
+    // 睡眠定时器 UI 刷新
+    _sleepUiTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted && widget.audioService.sleepActive) setState(() {});
+    });
+
     _eqAnimCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 600),
+      duration: const Duration(milliseconds: 500),
     )..addListener(_updateEqBars);
     _eqAnimCtrl.repeat(reverse: true);
   }
 
   void _updateEqBars() {
-    final rng = Random(DateTime.now().millisecondsSinceEpoch ~/ 100);
+    final rng = Random(DateTime.now().millisecondsSinceEpoch ~/ 50);
     final playing = widget.audioService.player.playing;
     final isDJ = widget.audioService.currentSong?.category == MusicCategory.dj;
+    final eq = widget.audioService.eqPreset;
 
     setState(() {
+      final bassBoost = eq == EqPreset.djBass || eq == EqPreset.heavyBass;
       for (int i = 0; i < _eqBars.length; i++) {
-        final base = playing ? 0.4 : 0.1;
-        final amp = isDJ ? 0.6 : 0.3;
+        final base = playing ? 0.25 : 0.05;
+        var amp = isDJ ? 0.55 : 0.3;
+        // 低频段（0-4）加重
+        if (bassBoost && i < 5) amp *= 1.6;
+        if (eq == EqPreset.vocal && i > 4 && i < 10) amp *= 1.3;
+        if (eq == EqPreset.classical && i > 8) amp *= 0.6;
         _eqBars[i] = base + rng.nextDouble() * amp;
       }
     });
@@ -67,14 +78,15 @@ class _PlayerScreenState extends State<PlayerScreen>
   @override
   void dispose() {
     _positionSub?.cancel();
+    _sleepUiTimer?.cancel();
     _eqAnimCtrl.dispose();
     super.dispose();
   }
 
-  String _formatDuration(Duration d) {
-    final min = d.inMinutes;
-    final sec = d.inSeconds % 60;
-    return '${min.toString().padLeft(2, '0')}:${sec.toString().padLeft(2, '0')}';
+  String _fmt(Duration d) {
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$m:$s';
   }
 
   @override
@@ -91,35 +103,23 @@ class _PlayerScreenState extends State<PlayerScreen>
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: isDJ
-                ? [const Color(0xFF2D1B00), const Color(0xFF1A1A2E)]
-                : [const Color(0xFF0D1B3E), const Color(0xFF1A1A2E)],
+                ? [const Color(0xFF2D1B00), const Color(0xFF0F0F1A)]
+                : [const Color(0xFF0D1B3E), const Color(0xFF0F0F1A)],
           ),
         ),
         child: SafeArea(
           child: Column(
             children: [
-              // ── 顶部栏 ──
-              _buildTopBar(isDJ),
-
-              // ── 内容区域（封面 or 歌词） ──
+              _topBar(isDJ),
               Expanded(
                 child: _showLyrics && lyrics.isNotEmpty
-                    ? _buildLyricView(lyrics, lyricIdx, isDJ)
-                    : _buildCoverArt(isDJ),
+                    ? _lyricView(lyrics, lyricIdx, isDJ)
+                    : _coverView(isDJ),
               ),
-
-              // ── 歌曲信息 ──
-              _buildSongInfo(song),
-
-              // ── 进度条 ──
-              _buildProgressBar(isDJ),
-
-              // ── 播放控制 ──
-              _buildControls(isDJ),
-
-              // ── 底部：播放模式 + 歌词切换 ──
-              _buildBottomBar(isDJ, lyrics),
-
+              _songInfo(song, isDJ),
+              _progressBar(isDJ),
+              _controls(isDJ),
+              _bottomBar(isDJ, lyrics),
               const SizedBox(height: 8),
             ],
           ),
@@ -128,9 +128,10 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
-  Widget _buildTopBar(bool isDJ) {
+  // ── 顶部栏 ──
+  Widget _topBar(bool isDJ) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       child: Row(
         children: [
           IconButton(
@@ -139,22 +140,39 @@ class _PlayerScreenState extends State<PlayerScreen>
             onPressed: () => Navigator.pop(context),
           ),
           const Spacer(),
-          Text(
-            isDJ ? '🔥 DJ 模式' : '🎵 流行模式',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.5),
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
+          // 睡眠定时器指示
+          if (widget.audioService.sleepActive)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.pink.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.bedtime_rounded, color: Colors.pink, size: 14),
+                  const SizedBox(width: 4),
+                  Text(
+                    widget.audioService.sleepTimerLabel,
+                    style: const TextStyle(color: Colors.pink, fontSize: 12),
+                  ),
+                ],
+              ),
             ),
+          const SizedBox(width: 8),
+          Text(
+            '${widget.audioService.currentIndex + 1}/${widget.audioService.queue.length}',
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12),
           ),
-          const Spacer(),
           const SizedBox(width: 48),
         ],
       ),
     );
   }
 
-  Widget _buildCoverArt(bool isDJ) {
+  // ── 封面 ──
+  Widget _coverView(bool isDJ) {
     return Center(
       child: StreamBuilder<bool>(
         stream: widget.audioService.player.playingStream,
@@ -162,34 +180,30 @@ class _PlayerScreenState extends State<PlayerScreen>
           final playing = snapshot.data ?? false;
           return TweenAnimationBuilder<double>(
             tween: Tween(begin: 0, end: playing ? 2 * pi : 0),
-            duration: const Duration(seconds: 20),
-            builder: (context, value, child) {
-              return Transform.rotate(angle: value, child: child);
-            },
+            duration: const Duration(seconds: 25),
+            builder: (context, value, child) =>
+                Transform.rotate(angle: value, child: child),
             child: Container(
-              width: 220,
-              height: 220,
+              width: 200,
+              height: 200,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: LinearGradient(
                   colors: isDJ
-                      ? [Colors.orange.shade600, Colors.red.shade400]
-                      : [Colors.blue.shade600, Colors.pink.shade400],
+                      ? [Colors.orange.shade600, Colors.red.shade500, Colors.purple]
+                      : [Colors.blue.shade600, Colors.pink.shade400, Colors.purple],
                 ),
                 boxShadow: [
                   BoxShadow(
                     color: (isDJ ? Colors.orange : Colors.blue)
-                        .withValues(alpha: 0.3),
-                    blurRadius: 40,
-                    spreadRadius: 5,
+                        .withValues(alpha: 0.35),
+                    blurRadius: 50,
+                    spreadRadius: 8,
                   ),
                 ],
               ),
-              child: const Icon(
-                Icons.music_note_rounded,
-                color: Colors.white,
-                size: 80,
-              ),
+              child: const Icon(Icons.music_note_rounded,
+                  color: Colors.white, size: 70),
             ),
           );
         },
@@ -197,57 +211,61 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
-  Widget _buildLyricView(
-      List<LyricLine> lyrics, int currentIdx, bool isDJ) {
+  // ── 歌词视图 ──
+  Widget _lyricView(List<LyricLine> lyrics, int currentIdx, bool isDJ) {
     return Column(
       children: [
         // 均衡器可视化
         SizedBox(
-          height: 80,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: List.generate(_eqBars.length, (i) {
-              return Container(
-                width: 6,
-                height: _eqBars[i] * 70,
-                margin: const EdgeInsets.symmetric(horizontal: 2),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(3),
-                  gradient: LinearGradient(
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                    colors: isDJ
-                        ? [Colors.orange.shade600, Colors.yellow.shade400]
-                        : [Colors.pink.shade400, Colors.blue.shade300],
+          height: 70,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: List.generate(_eqBars.length, (i) {
+                final t = i / (_eqBars.length - 1);
+                final color = Color.lerp(
+                  isDJ ? Colors.orange : Colors.pink,
+                  isDJ ? Colors.yellow : Colors.blue,
+                  t,
+                )!;
+                return Container(
+                  width: 4,
+                  height: _eqBars[i] * 60,
+                  margin: const EdgeInsets.symmetric(horizontal: 1.5),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(2),
+                    gradient: LinearGradient(
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
+                      colors: [color, color.withValues(alpha: 0.3)],
+                    ),
                   ),
-                ),
-              );
-            }),
+                );
+              }),
+            ),
           ),
         ),
-        const SizedBox(height: 16),
-        // 歌词滚动
+        const SizedBox(height: 8),
         Expanded(
           child: ListView.builder(
             padding: EdgeInsets.symmetric(
-                vertical: MediaQuery.of(context).size.height * 0.15),
+                vertical: MediaQuery.of(context).size.height * 0.12),
             itemCount: lyrics.length,
             itemBuilder: (context, index) {
               final isCurrent = index == currentIdx;
               return Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 32, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 7),
                 child: AnimatedDefaultTextStyle(
-                  duration: const Duration(milliseconds: 300),
+                  duration: const Duration(milliseconds: 250),
                   style: TextStyle(
                     color: isCurrent
                         ? (isDJ ? Colors.orange : Colors.pink)
-                        : Colors.white.withValues(alpha: 0.3),
-                    fontSize: isCurrent ? 20 : 16,
-                    fontWeight:
-                        isCurrent ? FontWeight.bold : FontWeight.normal,
-                    height: 1.5,
+                        : Colors.white.withValues(alpha: 0.25),
+                    fontSize: isCurrent ? 21 : 15,
+                    fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+                    height: 1.6,
                   ),
                   textAlign: TextAlign.center,
                   child: Text(lyrics[index].text),
@@ -260,18 +278,15 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
-  Widget _buildSongInfo(Song? song) {
+  // ── 歌曲信息 ──
+  Widget _songInfo(Song? song, bool isDJ) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 6),
       child: Column(
         children: [
           Text(
-            song?.title ?? '未选择歌曲',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
+            song?.title ?? '未选择',
+            style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.bold),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
@@ -280,24 +295,19 @@ class _PlayerScreenState extends State<PlayerScreen>
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                song?.category == MusicCategory.dj
-                    ? Icons.bolt_rounded
-                    : Icons.headphones_rounded,
-                color: Colors.white38,
-                size: 14,
-              ),
-              const SizedBox(width: 4),
               Text(
-                song?.category == MusicCategory.dj ? 'DJ 劲爆' : '流行歌曲',
-                style:
-                    TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 13),
+                widget.audioService.eqPresetLabel,
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 12),
               ),
-              const SizedBox(width: 12),
-              // 播放模式指示
+              const SizedBox(width: 8),
               Text(
-                widget.audioService.playModeIcon,
-                style: const TextStyle(fontSize: 14),
+                widget.audioService.speedLabel,
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.25), fontSize: 11),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                widget.audioService.playModeLabel,
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.25), fontSize: 11),
               ),
             ],
           ),
@@ -306,8 +316,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
-  Widget _buildProgressBar(bool isDJ) {
-    final sliderValue = _duration.inMilliseconds > 0
+  // ── 进度条 ──
+  Widget _progressBar(bool isDJ) {
+    final v = _duration.inMilliseconds > 0
         ? _position.inMilliseconds / _duration.inMilliseconds
         : 0.0;
 
@@ -318,24 +329,17 @@ class _PlayerScreenState extends State<PlayerScreen>
           SliderTheme(
             data: SliderThemeData(
               trackHeight: 3,
-              thumbShape:
-                  const RoundSliderThumbShape(enabledThumbRadius: 7),
-              overlayShape:
-                  const RoundSliderOverlayShape(overlayRadius: 14),
-              activeTrackColor:
-                  isDJ ? Colors.orange.shade400 : Colors.pink.shade400,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+              activeTrackColor: isDJ ? Colors.orange.shade400 : Colors.pink.shade400,
               inactiveTrackColor: Colors.white24,
               thumbColor: Colors.white,
-              overlayColor: (isDJ ? Colors.orange : Colors.pink)
-                  .withValues(alpha: 0.2),
+              overlayColor: (isDJ ? Colors.orange : Colors.pink).withValues(alpha: 0.2),
             ),
             child: Slider(
-              value: sliderValue.clamp(0.0, 1.0),
-              onChanged: (v) {
-                final ms = (v * _duration.inMilliseconds).round();
-                widget.audioService.player
-                    .seek(Duration(milliseconds: ms));
-              },
+              value: v.clamp(0.0, 1.0),
+              onChanged: (x) => widget.audioService.player
+                  .seek(Duration(milliseconds: (x * _duration.inMilliseconds).round())),
             ),
           ),
           Padding(
@@ -343,16 +347,10 @@ class _PlayerScreenState extends State<PlayerScreen>
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  _formatDuration(_position),
-                  style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.4), fontSize: 12),
-                ),
-                Text(
-                  _formatDuration(_duration),
-                  style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.4), fontSize: 12),
-                ),
+                Text(_fmt(_position),
+                    style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 11)),
+                Text(_fmt(_duration),
+                    style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 11)),
               ],
             ),
           ),
@@ -361,23 +359,20 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
-  Widget _buildControls(bool isDJ) {
+  // ── 控制栏 ──
+  Widget _controls(bool isDJ) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
           // 播放模式
           IconButton(
-            icon: Text(
-              widget.audioService.playModeIcon,
-              style: const TextStyle(fontSize: 22),
-            ),
+            icon: const Icon(Icons.repeat_rounded, color: Colors.white38, size: 24),
             onPressed: () {
               widget.audioService.cyclePlayMode();
               setState(() {});
             },
-            tooltip: '切换播放模式',
           ),
           IconButton(
             icon: const Icon(Icons.skip_previous_rounded,
@@ -387,10 +382,10 @@ class _PlayerScreenState extends State<PlayerScreen>
           StreamBuilder<bool>(
             stream: widget.audioService.player.playingStream,
             builder: (context, snapshot) {
-              final playing = snapshot.data ?? false;
+              final p = snapshot.data ?? false;
               return Container(
-                width: 64,
-                height: 64,
+                width: 66,
+                height: 66,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: LinearGradient(
@@ -401,18 +396,15 @@ class _PlayerScreenState extends State<PlayerScreen>
                   boxShadow: [
                     BoxShadow(
                       color: (isDJ ? Colors.orange : Colors.pink)
-                          .withValues(alpha: 0.4),
-                      blurRadius: 20,
+                          .withValues(alpha: 0.45),
+                      blurRadius: 24,
                     ),
                   ],
                 ),
                 child: IconButton(
                   icon: Icon(
-                    playing
-                        ? Icons.pause_rounded
-                        : Icons.play_arrow_rounded,
-                    color: Colors.white,
-                    size: 34,
+                    p ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                    color: Colors.white, size: 36,
                   ),
                   onPressed: widget.audioService.togglePlay,
                 ),
@@ -424,98 +416,90 @@ class _PlayerScreenState extends State<PlayerScreen>
                 color: Colors.white, size: 38),
             onPressed: () => widget.audioService.next(),
           ),
-          // 歌词切换
           IconButton(
-            icon: Icon(
-              _showLyrics
-                  ? Icons.lyrics_rounded
-                  : Icons.lyrics_outlined,
-              color: _showLyrics ? Colors.pink : Colors.white38,
-              size: 26,
-            ),
-            onPressed: () =>
-                setState(() => _showLyrics = !_showLyrics),
-            tooltip: '歌词',
+            icon: const Icon(Icons.shuffle_rounded, color: Colors.white38, size: 24),
+            onPressed: () => widget.audioService.setPlayMode(PlayMode.shuffle),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildBottomBar(bool isDJ, List<LyricLine> lyrics) {
+  // ── 底部功能栏 ──
+  Widget _bottomBar(bool isDJ, List<LyricLine> lyrics) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          // 歌词按钮
-          _bottomBtn(
-            icon: lyrics.isNotEmpty
-                ? Icons.closed_caption_rounded
-                : Icons.closed_caption_disabled_rounded,
-            label: lyrics.isNotEmpty ? '有歌词' : '无歌词',
+          _chip(
+            icon: lyrics.isNotEmpty ? Icons.lyrics_rounded : Icons.lyrics_outlined,
+            label: '歌词',
             active: _showLyrics,
-            onTap: lyrics.isNotEmpty
-                ? () => setState(() => _showLyrics = !_showLyrics)
-                : null,
+            onTap: () => setState(() => _showLyrics = !_showLyrics),
           ),
-          // 均衡器视觉
-          _bottomBtn(
-            icon: isDJ ? Icons.equalizer_rounded : Icons.equalizer_outlined,
-            label: isDJ ? 'DJ音效' : '标准',
-            active: isDJ,
-            onTap: null,
+          _chip(
+            icon: Icons.equalizer_rounded,
+            label: widget.audioService.eqPresetLabel,
+            active: widget.audioService.eqPreset != EqPreset.flat,
+            onTap: () {
+              widget.audioService.cycleEqPreset();
+              setState(() {});
+            },
           ),
-          // 歌曲数
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              '${widget.audioService.queue.length} 首',
-              style:
-                  TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12),
-            ),
+          _chip(
+            icon: Icons.speed_rounded,
+            label: widget.audioService.speedLabel,
+            active: widget.audioService.speed != 1.0,
+            onTap: () {
+              widget.audioService.cycleSpeed();
+              setState(() {});
+            },
+          ),
+          _chip(
+            icon: widget.audioService.sleepActive
+                ? Icons.bedtime_rounded
+                : Icons.bedtime_outlined,
+            label: widget.audioService.sleepTimerLabel,
+            active: widget.audioService.sleepActive,
+            onTap: () {
+              widget.audioService.cycleSleepTimer();
+              setState(() {});
+            },
           ),
         ],
       ),
     );
   }
 
-  Widget _bottomBtn({
+  Widget _chip({
     required IconData icon,
     required String label,
     required bool active,
-    VoidCallback? onTap,
+    required VoidCallback onTap,
   }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: active
-              ? Colors.pink.withValues(alpha: 0.2)
-              : Colors.white.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(16),
+          color: active ? Colors.pink.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.04),
+          borderRadius: BorderRadius.circular(14),
           border: active
-              ? Border.all(color: Colors.pink.withValues(alpha: 0.5))
+              ? Border.all(color: Colors.pink.withValues(alpha: 0.4))
               : null,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon,
-                color: active ? Colors.pink : Colors.white38, size: 16),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                color: active ? Colors.pink : Colors.white38,
-                fontSize: 11,
-              ),
-            ),
+                color: active ? Colors.pink.shade300 : Colors.white38,
+                size: 15),
+            const SizedBox(width: 3),
+            Text(label,
+                style: TextStyle(
+                    color: active ? Colors.pink.shade200 : Colors.white38,
+                    fontSize: 11)),
           ],
         ),
       ),

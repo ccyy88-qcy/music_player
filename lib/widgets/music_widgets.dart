@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:just_audio/just_audio.dart';
 import '../models/song.dart';
 import '../services/audio_player.dart';
 
@@ -36,7 +35,6 @@ class MiniPlayer extends StatelessWidget {
         ),
         child: Row(
           children: [
-            // 封面占位
             Container(
               width: 48,
               height: 48,
@@ -49,44 +47,43 @@ class MiniPlayer extends StatelessWidget {
                       : [Colors.blue, Colors.lightBlue],
                 ),
               ),
-              child: Icon(
-                Icons.music_note,
-                color: Colors.white.withValues(alpha: 0.8),
-                size: 28,
+              child: StreamBuilder<bool>(
+                stream: audioService.player.playingStream,
+                builder: (context, snap) {
+                  final playing = snap.data ?? false;
+                  return Icon(
+                    playing ? Icons.equalizer_rounded : Icons.music_note,
+                    color: Colors.white.withValues(alpha: 0.8),
+                    size: 28,
+                  );
+                },
               ),
             ),
-            // 歌曲信息
             Expanded(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    song.title,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  Text(song.title,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
                   const SizedBox(height: 2),
                   Text(
-                    song.category == MusicCategory.dj ? '🔥 DJ' : '🎵 流行',
+                    '${song.category == MusicCategory.dj ? '🔥 DJ' : '🎵 流行'} · ${audioService.eqPresetLabel}',
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.5),
-                      fontSize: 11,
-                    ),
+                        color: Colors.white.withValues(alpha: 0.5), fontSize: 11),
                   ),
                 ],
               ),
             ),
-            // 播放控制
             StreamBuilder<bool>(
               stream: audioService.player.playingStream,
-              builder: (context, snapshot) {
-                final playing = snapshot.data ?? false;
+              builder: (context, snap) {
+                final playing = snap.data ?? false;
                 return IconButton(
                   icon: Icon(
                     playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
@@ -133,20 +130,14 @@ class CategoryHeader extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(
-            isDJ ? Icons.bolt_rounded : Icons.headphones_rounded,
-            color: Colors.white,
-            size: 24,
-          ),
+          Icon(isDJ ? Icons.bolt_rounded : Icons.headphones_rounded,
+              color: Colors.white, size: 24),
           const SizedBox(width: 10),
-          Text(
-            isDJ ? 'DJ 劲爆' : '流行歌曲',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
+          Text(isDJ ? 'DJ 劲爆' : '流行歌曲',
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold)),
           const Spacer(),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -154,10 +145,8 @@ class CategoryHeader extends StatelessWidget {
               color: Colors.white.withValues(alpha: 0.25),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Text(
-              '$count 首',
-              style: const TextStyle(color: Colors.white, fontSize: 13),
-            ),
+            child:
+                Text('$count 首', style: const TextStyle(color: Colors.white, fontSize: 13)),
           ),
         ],
       ),
@@ -165,17 +154,21 @@ class CategoryHeader extends StatelessWidget {
   }
 }
 
-/// 歌曲列表项
+/// 歌曲列表项（带收藏）
 class SongTile extends StatelessWidget {
   final Song song;
   final bool isPlaying;
+  final bool isFavorite;
   final VoidCallback onTap;
+  final VoidCallback? onFavorite;
 
   const SongTile({
     super.key,
     required this.song,
     required this.isPlaying,
+    this.isFavorite = false,
     required this.onTap,
+    this.onFavorite,
   });
 
   @override
@@ -208,16 +201,42 @@ class SongTile extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
-      subtitle: Text(
-        song.category == MusicCategory.dj ? 'DJ' : '流行',
-        style: TextStyle(
-          fontSize: 12,
-          color: isPlaying ? Colors.pink.shade300 : Colors.grey,
-        ),
+      subtitle: Row(
+        children: [
+          Text(
+            song.category == MusicCategory.dj ? 'DJ' : '流行',
+            style: TextStyle(
+                fontSize: 12,
+                color: isPlaying ? Colors.pink.shade300 : Colors.grey),
+          ),
+          if (song.playCount > 0) ...[
+            const SizedBox(width: 8),
+            Icon(Icons.play_circle_outline, size: 11,
+                color: Colors.grey.shade600),
+            const SizedBox(width: 2),
+            Text('${song.playCount}',
+                style: TextStyle(fontSize: 10, color: Colors.grey.shade600)),
+          ],
+        ],
       ),
-      trailing: isPlaying
-          ? Icon(Icons.volume_up_rounded, color: Colors.pink.shade400, size: 20)
-          : null,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (isPlaying)
+            Icon(Icons.volume_up_rounded, color: Colors.pink.shade400, size: 20),
+          if (onFavorite != null)
+            IconButton(
+              icon: Icon(
+                isFavorite ? Icons.star_rounded : Icons.star_outline_rounded,
+                color: isFavorite ? Colors.amber : Colors.white30,
+                size: 22,
+              ),
+              onPressed: onFavorite,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 36),
+            ),
+        ],
+      ),
     );
   }
 }
