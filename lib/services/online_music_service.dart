@@ -72,11 +72,19 @@ class NeteaseSource extends MusicSource {
   @override Future<List<OnlineSong>> search(String keyword, {int page = 1, limit = 20}) async {
     final results = <OnlineSong>[];
     
-    // 排除关键词对网易云搜索API无效（返回0结果），全靠搜索结果后过滤
-    final coverKeywords = ['钢琴版', '钢琴曲', 'Cover', 'cover', '翻唱', '翻弹', '改编', '指弹', '纯音乐', '伴奏', 'DJ版', 'Remix', 'Live'];
+    // 不过滤翻唱（有些歌只有翻唱版有免费源）
+    // 只过滤伴奏/纯音乐（不太可能被用户需要）
+    final instrumentalKeywords = ['伴奏', '纯音乐', 'inst', 'instrumental'];
+    
+    // NMTID Cookie显著提升搜索结果准确性
+    final searchHeaders = {
+      'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36',
+      'Referer': 'https://music.163.com/',
+      'Cookie': 'NMTID=00OKlEq2nVNMgNF05CFI1JjHgQehWAAAQJZovaw',
+    };
     
     final url = 'https://music.163.com/api/search/get?s=${Uri.encodeComponent(keyword)}&type=1&limit=$limit&offset=${(page - 1) * limit}';
-    final resp = await http.get(Uri.parse(url), headers: _h()).timeout(const Duration(seconds: 10));
+    final resp = await http.get(Uri.parse(url), headers: searchHeaders).timeout(const Duration(seconds: 10));
     if (resp.statusCode != 200) return [];
     
     try {
@@ -92,9 +100,9 @@ class NeteaseSource extends MusicSource {
         
         // 不按fee过滤VIP，播放时再尝试获取地址（部分会员歌CDN不检查权限）
         
-        // 过滤明显翻唱
-        bool isCover = coverKeywords.any((kw) => name.contains(kw));
-        if (isCover) continue;
+        // 过滤伴奏/纯音乐（用户不太需要）
+        bool isInstrumental = instrumentalKeywords.any((kw) => name.contains(kw));
+        if (isInstrumental) continue;
         
         // 过滤时长太短的（<60秒通常是试听或片段）
         final duration = s['duration'] as int? ?? 0;
