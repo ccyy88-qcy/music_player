@@ -247,19 +247,37 @@ class DownloadManager {
       final safe = '${song.title} - ${song.artist}'.replaceAll(RegExp(r'[/\\:*?"<>|]'), '_');
       final path = '$saveDir/$safe.mp3';
       if (File(path).existsSync()) return path;
-      final r = await http.get(Uri.parse(playUrl), headers: _h()).timeout(const Duration(minutes: 5));
-      if (r.statusCode != 200) return null;
-      final bytes = r.bodyBytes;
-      if (bytes.length < 1000) return null; // 太小可能是错误页面
-      // 检查文件头
-      if (bytes.length > 4) {
-        final isAudio = (bytes[0] == 0x49 && bytes[1] == 0x44 && bytes[2] == 0x33) || // ID3
-            (bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0) || // MP3 sync
-            (bytes[0] == 0x66 && bytes[1] == 0x4C && bytes[2] == 0x61 && bytes[3] == 0x43); // FLAC
-        if (!isAudio) return null;
+
+      // 手动处理302跳转
+      var url = playUrl;
+      for (int i = 0; i < 5; i++) { // 最多5次跳转
+        final req = http.Request('GET', Uri.parse(url));
+        req.headers.addAll({
+          'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36',
+          'Referer': 'https://music.163.com/',
+          'Accept': '*/*',
+        });
+        req.followRedirects = false;
+        final resp = await http.Client().send(req).timeout(const Duration(seconds: 30));
+        if (resp.statusCode == 302 || resp.statusCode == 301) {
+          url = resp.headers['location'] ?? '';
+          if (url.isEmpty) return null;
+          continue;
+        }
+        if (resp.statusCode != 200) return null;
+        final bytes = await resp.stream.toBytes();
+        if (bytes.length < 1000) return null; // 太小可能是错误页面
+        // 检查文件头
+        if (bytes.length > 4) {
+          final isAudio = (bytes[0] == 0x49 && bytes[1] == 0x44 && bytes[2] == 0x33) || // ID3
+              (bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0) || // MP3 sync
+              (bytes[0] == 0x66 && bytes[1] == 0x4C && bytes[2] == 0x61 && bytes[3] == 0x43); // FLAC
+          if (!isAudio) return null;
+        }
+        await File(path).writeAsBytes(bytes);
+        return path;
       }
-      await File(path).writeAsBytes(bytes);
-      return path;
+      return null;
     } catch (_) { return null; }
   }
 }
