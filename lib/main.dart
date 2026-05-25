@@ -9,16 +9,20 @@ late AudioPlayerHandler audioHandler;
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  audioHandler = await AudioService.init(
-    builder: () => AudioPlayerHandler(),
-    config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.alee.music_player.channel',
-      androidNotificationChannelName: '狸音乐',
-      androidStopForegroundOnPause: false,
-      androidNotificationClickStartsActivity: true,
-      androidNotificationIcon: 'drawable/ic_launcher',
-    ),
-  );
+  // 尝试初始化 audio_service（通知栏控制），超时 5 秒降级
+  try {
+    audioHandler = await AudioService.init(
+      builder: () => AudioPlayerHandler(),
+      config: const AudioServiceConfig(
+        androidNotificationChannelId: 'com.alee.music.channel',
+        androidNotificationChannelName: '狸音乐',
+        androidStopForegroundOnPause: false,
+        androidNotificationClickStartsActivity: true,
+      ),
+    ).timeout(const Duration(seconds: 5));
+  } catch (_) {
+    audioHandler = AudioPlayerHandler();
+  }
 
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(statusBarColor: Colors.transparent, statusBarIconBrightness: Brightness.light),
