@@ -19,6 +19,7 @@ Future<void> main() async {
       channelDescription: '后台音乐播放服务',
     ),
     iosNotificationOptions: const IOSNotificationOptions(),
+    foregroundTaskOptions: const ForegroundTaskOptions(),
   );
 
   // 2. 请求忽略电池优化（静默失败不影响启动）
