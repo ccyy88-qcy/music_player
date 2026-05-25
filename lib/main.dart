@@ -1,34 +1,35 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:audio_service/audio_service.dart';
 import 'services/audio_handler.dart';
 import 'screens/home_screen.dart';
 
 late AudioPlayerHandler audioHandler;
-const _channel = MethodChannel('com.alee.music_player/service');
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  audioHandler = AudioPlayerHandler();
+
+  // 初始化 audio_service（通知栏 + MediaSession + 前台服务）
+  // 超时或异常时降级为纯 just_audio
+  try {
+    audioHandler = await AudioService.init(
+      builder: () => AudioPlayerHandler(),
+      config: const AudioServiceConfig(
+        androidNotificationChannelId: 'com.alee.music_player.audio',
+        androidNotificationChannelName: '狸音乐',
+      ),
+    ).timeout(const Duration(seconds: 5));
+  } catch (_) {
+    audioHandler = AudioPlayerHandler();
+  }
+
+  // 请求忽略电池优化（原生 MethodChannel，静默失败）
+  try { const MethodChannel('com.alee.music_player/service').invokeMethod('requestIgnoreBatteryOptimizations'); } catch (_) {}
+
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(statusBarColor: Colors.transparent, statusBarIconBrightness: Brightness.light),
   );
-  _requestBatteryOptimization();
   runApp(const MusicPlayerApp());
-}
-
-Future<void> _requestBatteryOptimization() async {
-  try {
-    final ok = await _channel.invokeMethod<bool>('isIgnoringBatteryOptimizations').then((v) => v ?? true);
-    if (!ok) await _channel.invokeMethod('requestIgnoreBatteryOptimizations');
-  } catch (_) {}
-}
-
-void notifyForeground(String title, String artist, bool playing) {
-  _channel.invokeMethod('updateNotification', {'title': title, 'artist': artist, 'playing': playing});
-}
-
-void stopForeground() {
-  _channel.invokeMethod('stopForegroundService');
 }
 
 class MusicPlayerApp extends StatelessWidget {
