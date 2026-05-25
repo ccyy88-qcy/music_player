@@ -53,6 +53,7 @@ class OnlineSong {
 
 abstract class MusicSource {
   String get name;
+  String get key; // 短key，与OnlineSong.source匹配
   Future<List<OnlineSong>> search(String keyword, {int page = 1, int limit = 20});
   Future<String?> getPlayUrl(OnlineSong song);
   Future<String?> getLyric(OnlineSong song);
@@ -66,6 +67,7 @@ Map<String, String> _h() => {
 /// ========== 网易云音乐 API ==========
 class NeteaseSource extends MusicSource {
   @override String get name => '网易云';
+  @override String get key => 'netease';
 
   @override Future<List<OnlineSong>> search(String keyword, {int page = 1, limit = 20}) async {
     final results = <OnlineSong>[];
@@ -157,6 +159,7 @@ class NeteaseSource extends MusicSource {
 /// ========== QQ音乐 API ==========
 class QQSource extends MusicSource {
   @override String get name => 'QQ音乐';
+  @override String get key => 'qq';
 
   @override Future<List<OnlineSong>> search(String keyword, {int page = 1, int limit = 20}) async {
     final url = 'https://c.y.qq.com/soso/fcgi-bin/client_search_cp?format=json&w=${Uri.encodeComponent(keyword)}&p=$page&n=$limit&cr=1&g_tk=5381';
@@ -207,6 +210,7 @@ class QQSource extends MusicSource {
 /// ========== 酷狗音乐 API ==========
 class KugouSource extends MusicSource {
   @override String get name => '酷狗';
+  @override String get key => 'kugou';
 
   @override Future<List<OnlineSong>> search(String keyword, {int page = 1, int limit = 20}) async {
     final url = 'http://mobilecdn.kugou.com/api/v3/search/song?format=json&keyword=${Uri.encodeComponent(keyword)}&page=$page&pagesize=$limit';
@@ -263,6 +267,7 @@ class CustomApiSource extends MusicSource {
   CustomApiSource({required String name, required String searchUrl, required String playUrl, required String lyricUrl})
     : _name = name, _searchUrl = searchUrl, _playUrl = playUrl, _lyricUrl = lyricUrl;
   @override String get name => _name;
+  @override String get key => _name;
   @override Future<List<OnlineSong>> search(String keyword, {int page = 1, int limit = 20}) async {
     final u = _searchUrl.replaceAll('{keyword}', Uri.encodeComponent(keyword)).replaceAll('{page}', '$page').replaceAll('{limit}', '$limit');
     final r = await http.get(Uri.parse(u), headers: _h()).timeout(const Duration(seconds: 10));
@@ -296,28 +301,52 @@ MusicSource get musicSource => NeteaseSource();
 
 class AggregateSource extends MusicSource {
   final List<MusicSource> _srcs;
-  AggregateSource(this._srcs);
+  final Map<String, MusicSource> _srcMap;
+
+  AggregateSource(this._srcs) : _srcMap = {for (final s in _srcs) s.key: s};
+
   @override String get name => _srcs.map((s) => s.name).join('+');
+
   @override Future<List<OnlineSong>> search(String keyword, {int page = 1, int limit = 20}) async {
-    // 同时查所有源，合并结果去重
+    // 并查所有源，合并去重
     final all = <String, OnlineSong>{};
-    for (final s in _srcs) {
-      try {
-        final r = await s.search(keyword, page: page, limit: limit);
-        for (final song in r) {
-          all.putIfAbsent('${song.id}_${song.source}', () => song);
-        }
-      } catch (_) {}
+    final results = await Future.wait(_srcs.map((s) => s.search(keyword, page: page, limit: limit).catchError((_) => <OnlineSong>[])));
+    for (final r in results) {
+      for (final song in r) {
+        all.putIfAbsent('${song.id}_${song.source}', () => song);
+      }
     }
     final merged = all.values.toList();
     merged.sort((a, b) => a.fee.compareTo(b.fee));
     return merged.take(limit * 2).toList();
   }
+
+  /// 根据song.source路由到正确的源获取播放地址
   @override Future<String?> getPlayUrl(OnlineSong song) async {
-    for (final s in _srcs) { try { final u = await s.getPlayUrl(song); if (u != null && u.startsWith('http')) return u; } catch (_) {} } return null;
+    // 已知源名直接路由
+    final known = _srcMap[song.source];
+    if (known != null) {
+      try {
+        final u = await known.getPlayUrl(song);
+        if (u != null && u.startsWith('http')) return u;
+      } catch (_) {}
+    }
+    // 降级：遍历所有源
+    for (final s in _srcs) {
+      try { final u = await s.getPlayUrl(song); if (u != null && u.startsWith('http')) return u; } catch (_) {}
+    }
+    return null;
   }
+
   @override Future<String?> getLyric(OnlineSong song) async {
-    for (final s in _srcs) { try { final l = await s.getLyric(song); if (l != null && l.isNotEmpty) return l; } catch (_) {} } return null;
+    final known = _srcMap[song.source];
+    if (known != null) {
+      try { final l = await known.getLyric(song); if (l != null && l.isNotEmpty) return l; } catch (_) {}
+    }
+    for (final s in _srcs) {
+      try { final l = await s.getLyric(song); if (l != null && l.isNotEmpty) return l; } catch (_) {}
+    }
+    return null;
   }
 }
 

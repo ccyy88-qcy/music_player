@@ -16,6 +16,7 @@ class AudioPlayerHandler {
   int _currentIndex = -1;
   List<LyricLine> _lyrics = [];
   int _lyricIndex = -1;
+  int _lyricReqId = 0; // 歌词请求ID，防竞态
   Timer? _sleepTimer;
   int _sleepRemaining = 0;
   PlayMode _playMode = PlayMode.repeatAll;
@@ -80,6 +81,7 @@ class AudioPlayerHandler {
   }
 
   Future<void> loadSongList(List<Song> songs, {int startIndex = 0}) async {
+    _lyricReqId++; // 标记新请求，丢弃旧歌词异步结果
     _songQueue.clear(); _songQueue.addAll(songs); _currentIndex = startIndex;
     await _player.setAudioSource(
       ConcatenatingAudioSource(children: songs.map((s) => _createAudioSource(s)).toList()),
@@ -107,12 +109,15 @@ class AudioPlayerHandler {
   void cancelSleepTimer() { _sleepTimer?.cancel(); _sleepTimer = null; _sleepRemaining = 0; }
   String get sleepTimerLabel => !sleepActive ? '定时' : '${(_sleepRemaining ~/ 60)}:${(_sleepRemaining % 60).toString().padLeft(2, '0')}';
   Future<void> _loadLyrics() async {
-    final s = currentSong; if (s == null) { _lyrics = []; _lyricIndex = -1; return; }
-    _lyrics = await LyricParser.fromAudioPath(s.filePath);
-    if (_lyrics.isEmpty) _lyrics = await LyricParser.searchOnline(s.title, s.artist);
-    _lyricIndex = -1;
+    final reqId = _lyricReqId;
+    final s = currentSong; if (s == null) { if (reqId == _lyricReqId) { _lyrics = []; _lyricIndex = -1; } return; }
+    final lrc = await LyricParser.fromAudioPath(s.filePath);
+    if (reqId != _lyricReqId) return;
+    if (lrc.isNotEmpty) { _lyrics = lrc; _lyricIndex = -1; return; }
+    final onlineLrc = await LyricParser.searchOnline(s.title, s.artist);
+    if (reqId == _lyricReqId) { _lyrics = onlineLrc; _lyricIndex = -1; }
   }
   void updateLyricPosition(Duration p) => _lyricIndex = LyricParser.findCurrentIndex(_lyrics, p);
-  void setOnlineLyrics(List<LyricLine> l) { _lyrics = l; _lyricIndex = -1; }
+  void setOnlineLyrics(List<LyricLine> l) { _lyricReqId++; _lyrics = l; _lyricIndex = -1; }
   void dispose() { _sleepTimer?.cancel(); _stopFg(); _player.dispose(); }
 }

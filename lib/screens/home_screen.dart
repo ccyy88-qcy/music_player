@@ -153,8 +153,8 @@ class _HomeScreenState extends State<HomeScreen>
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
     _gradientCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 6))..repeat(reverse: true);
-    // 监听切歌 → 刷新MiniPlayer
-    _songSub = audioHandler.player.sequenceStateStream.listen((_) { if (mounted) setState(() {}); });
+    // 监听切歌 → 刷新MiniPlayer（只监听index变化避免频繁setState）
+    _songSub = audioHandler.player.currentIndexStream.listen((_) { if (mounted) setState(() {}); });
     WidgetsBinding.instance.addObserver(this);
     _initAndScan();
   }
