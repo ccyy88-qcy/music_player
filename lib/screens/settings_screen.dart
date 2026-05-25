@@ -501,17 +501,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _scanForSourceFiles() async {
-    final scanDirs = ['/storage/emulated/0/Download', '/storage/emulated/0/Documents'];
+    final scanDirs = ['/storage/emulated/0/Download', '/storage/emulated/0/Documents', '/storage/emulated/0'];
     final foundSources = <Map<String, String>>[];
 
     for (final dir in scanDirs) {
       final d = Directory(dir);
       if (!d.existsSync()) continue;
       try {
-        for (final entity in d.listSync(recursive: true)) {
+        for (final entity in d.listSync(recursive: dir == '/storage/emulated/0' ? false : true)) {
           if (entity is File) {
             final name = entity.path.toLowerCase();
-            if (name.endsWith('.js') || name.endsWith('.json') || name.endsWith('.txt')) {
+            // 优先匹配小熊猫源文件
+            final isXiaoPanda = entity.path.contains('小熊猫') || entity.path.contains('xmp3') || entity.path.contains('music_source');
+            if (name.endsWith('.js') || name.endsWith('.json') || name.endsWith('.txt') || isXiaoPanda) {
               try {
                 final content = entity.readAsStringSync();
                 final parsed = parseJsSource(content);
@@ -547,11 +549,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _addBuiltinSources() async {
     final builtin = [
-      {'name': '小熊猫搜索', 'url': 'https://api.xmp3.cc'},
-      {'name': '小熊猫备用', 'url': 'https://api.itooi.cn/music/tencent'},
-      {'name': '聚合搜索1', 'url': 'https://api.uomg.com/api'},
-      {'name': '免费音乐1', 'url': 'https://api.injahow.cn/meting'},
-      {'name': '免费音乐2', 'url': 'https://api.music.ghser.com'},
+      {'name': 'Meting(网易)', 'url': 'https://api.injahow.cn/meting'},
+      {'name': 'Uomg搜索', 'url': 'https://api.uomg.com/api'},
     ];
 
     final existing = _store.getMusicSources();

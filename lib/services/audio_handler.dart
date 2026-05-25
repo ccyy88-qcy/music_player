@@ -1,13 +1,13 @@
 import 'dart:async';
-import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import '../models/song.dart';
 import 'lyric_parser.dart';
 
 enum PlayMode { sequential, repeatOne, repeatAll, shuffle }
 enum EqPreset { flat, djBass, pop, vocal, classical, heavyBass }
 
-class AudioPlayerHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
+class AudioPlayerHandler {
   final AudioPlayer _player = AudioPlayer();
   final List<Song> _songQueue = [];
   int _currentIndex = -1;
@@ -19,6 +19,7 @@ class AudioPlayerHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   PlayMode _playMode = PlayMode.repeatAll;
   EqPreset _eqPreset = EqPreset.flat;
   double _speed = 1.0;
+  bool _wakelockEnabled = false;
 
   AudioPlayer get player => _player;
   int get currentIndex => _currentIndex;
@@ -33,84 +34,53 @@ class AudioPlayerHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   Song? get currentSong => _currentIndex >= 0 && _currentIndex < _songQueue.length ? _songQueue[_currentIndex] : null;
 
   AudioPlayerHandler() {
-    _player.playbackEventStream.listen(_broadcastState);
     _player.playerStateStream.listen((state) {
       if (state.processingState == ProcessingState.completed) {
         if (_player.hasNext) { _currentIndex++; }
         else if (_playMode == PlayMode.repeatAll) { _currentIndex = 0; _player.seek(Duration.zero, index: 0); return; }
-        else { _currentIndex = -1; }
+        else { _currentIndex = -1; _disableWakelock(); }
       }
+    });
+    _player.playingStream.listen((playing) {
+      if (playing) { _enableWakelock(); } else { _disableWakelock(); }
     });
   }
 
-  void _broadcastState(PlaybackEvent event) {
-    if (_currentIndex < 0) return;
-    final controls = [
-      MediaControl.skipToPrevious,
-      _player.playing ? MediaControl.pause : MediaControl.play,
-      MediaControl.skipToNext,
-    ];
-    playbackState.add(playbackState.value.copyWith(
-      controls: controls,
-      systemActions: const {MediaAction.seek},
-      androidCompactActionIndices: const [0, 1, 2],
-      processingState: const {
-        ProcessingState.idle: AudioProcessingState.idle,
-        ProcessingState.loading: AudioProcessingState.loading,
-        ProcessingState.buffering: AudioProcessingState.buffering,
-        ProcessingState.ready: AudioProcessingState.ready,
-        ProcessingState.completed: AudioProcessingState.completed,
-      }[_player.processingState]!,
-      playing: _player.playing,
-      updatePosition: _player.position,
-      bufferedPosition: _player.bufferedPosition,
-      queueIndex: _currentIndex,
-    ));
+  void _enableWakelock() {
+    if (!_wakelockEnabled) { WakelockPlus.enable(); _wakelockEnabled = true; }
+  }
+  void _disableWakelock() {
+    if (_wakelockEnabled) { WakelockPlus.disable(); _wakelockEnabled = false; }
   }
 
   Future<void> loadSongList(List<Song> songs, {int startIndex = 0}) async {
     _songQueue.clear(); _songQueue.addAll(songs); _currentIndex = startIndex;
-
-    queue.add(songs.map((s) => MediaItem(
-      id: s.filePath, title: s.title,
-      artist: s.artist.isNotEmpty ? s.artist : (s.category == MusicCategory.dj ? 'DJ劲爆' : '流行歌曲'),
-    )).toList());
-
     await _player.setAudioSource(
       ConcatenatingAudioSource(children: songs.map((s) => AudioSource.file(s.filePath)).toList()),
       initialIndex: startIndex,
     );
     _applyPlayMode(); _player.setSpeed(_speed); _player.play();
-    _loadLyrics();
-    mediaItem.add(queue.value[startIndex]);
+    _loadLyrics(); _enableWakelock();
   }
 
-  @override Future<void> play() async { _player.play(); _broadcastState(PlaybackEvent()); }
-  @override Future<void> pause() async => _player.pause();
-  @override Future<void> stop() async { await _player.stop(); _currentIndex = -1; }
-  @override Future<void> seek(Duration position) async => _player.seek(position);
+  void togglePlay() {
+    if (_player.playing) { _player.pause(); } else { _player.play(); }
+  }
 
-  @override
   Future<void> skipToNext() async {
-    if (_player.hasNext) { _currentIndex++; await _player.seekToNext(); _loadLyrics(); _updateMediaItem(); }
+    if (_player.hasNext) { _currentIndex++; await _player.seekToNext(); _loadLyrics(); }
   }
 
-  @override
   Future<void> skipToPrevious() async {
-    if (_player.hasPrevious) { _currentIndex--; await _player.seekToPrevious(); _loadLyrics(); _updateMediaItem(); }
+    if (_player.hasPrevious) { _currentIndex--; await _player.seekToPrevious(); _loadLyrics(); }
     else { await _player.seek(Duration.zero); }
   }
 
-  @override
-  Future<void> skipToQueueItem(int i) async {
-    if (i >= 0 && i < _songQueue.length) { _currentIndex = i; await _player.seek(Duration.zero, index: i); _player.play(); _loadLyrics(); _updateMediaItem(); }
+  Future<void> skipToIndex(int i) async {
+    if (i >= 0 && i < _songQueue.length) { _currentIndex = i; await _player.seek(Duration.zero, index: i); _player.play(); _loadLyrics(); }
   }
 
-  void _updateMediaItem() {
-    if (_currentIndex >= 0 && _currentIndex < _songQueue.length) mediaItem.add(queue.value[_currentIndex]);
-  }
-
-  void togglePlay() => _player.playing ? _player.pause() : _player.play();
+  Future<void> seek(Duration p) async => _player.seek(p);
 
   void cyclePlayMode() { _playMode = PlayMode.values[(_playMode.index + 1) % PlayMode.values.length]; _applyPlayMode(); }
   void _applyPlayMode() {
@@ -121,8 +91,7 @@ class AudioPlayerHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   String get playModeLabel => ['顺序', '单曲', '循环', '随机'][_playMode.index];
 
   Future<void> cycleSpeed() async {
-    const s = [0.75, 1.0, 1.25, 1.5, 2.0];
-    _speed = s[(s.indexOf(_speed) + 1) % s.length]; await _player.setSpeed(_speed);
+    const s = [0.75, 1.0, 1.25, 1.5, 2.0]; _speed = s[(s.indexOf(_speed) + 1) % s.length]; await _player.setSpeed(_speed);
   }
   String get speedLabel => _speed == 1.0 ? '正常' : '${_speed}x';
 
@@ -147,5 +116,5 @@ class AudioPlayerHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   void updateLyricPosition(Duration p) => _lyricIndex = LyricParser.findCurrentIndex(_lyrics, p);
   void setOnlineLyrics(List<LyricLine> l) { _lyrics = l; _lyricIndex = -1; }
 
-  @override Future<void> dispose() async { _sleepTimer?.cancel(); await _player.dispose(); }
+  void dispose() { _sleepTimer?.cancel(); _disableWakelock(); _player.dispose(); }
 }

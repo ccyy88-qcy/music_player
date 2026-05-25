@@ -1,33 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:audio_service/audio_service.dart';
 import 'services/audio_handler.dart';
 import 'screens/home_screen.dart';
 
 late AudioPlayerHandler audioHandler;
 
-Future<void> main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // 尝试初始化 audio_service（通知栏控制），超时 5 秒降级
-  try {
-    audioHandler = await AudioService.init(
-      builder: () => AudioPlayerHandler(),
-      config: const AudioServiceConfig(
-        androidNotificationChannelId: 'com.alee.music.channel',
-        androidNotificationChannelName: '狸音乐',
-        androidStopForegroundOnPause: false,
-        androidNotificationClickStartsActivity: true,
-      ),
-    ).timeout(const Duration(seconds: 5));
-  } catch (_) {
-    audioHandler = AudioPlayerHandler();
-  }
-
+  audioHandler = AudioPlayerHandler();
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(statusBarColor: Colors.transparent, statusBarIconBrightness: Brightness.light),
   );
-
   runApp(const MusicPlayerApp());
 }
 
