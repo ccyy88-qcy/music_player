@@ -3,6 +3,7 @@ import 'dart:io';
 import '../services/storage_manager.dart';
 import '../services/music_scanner.dart';
 import '../services/online_music_service.dart';
+import '../main.dart' show AppColors;
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -54,20 +55,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     if (_loading) {
       return const Scaffold(
-        backgroundColor: Color(0xFF0F0F1A),
+        backgroundColor: AppColors.bg,
         body: Center(
-          child: CircularProgressIndicator(color: Colors.pinkAccent),
+          child: CircularProgressIndicator(color: AppColors.foxOrange),
         ),
       );
     }
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('⚙️ 设置', style: TextStyle(color: Colors.white)),
-        backgroundColor: const Color(0xFF1A1A2E),
-        iconTheme: const IconThemeData(color: Colors.white),
+        title: const Text('⚙️ 设置', style: TextStyle(color: AppColors.textPrimary)),
+        backgroundColor: AppColors.surface,
+        iconTheme: const IconThemeData(color: AppColors.textPrimary),
       ),
-      backgroundColor: const Color(0xFF0F0F1A),
+      backgroundColor: AppColors.bg,
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [

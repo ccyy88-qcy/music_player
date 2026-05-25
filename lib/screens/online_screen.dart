@@ -5,7 +5,7 @@ import '../models/song.dart';
 import '../services/online_music_service.dart';
 import '../services/audio_handler.dart';
 import '../services/lyric_parser.dart';
-import '../main.dart' show audioHandler;
+import '../main.dart' show audioHandler, AppColors;
 import 'player_screen.dart';
 
 class OnlineScreen extends StatefulWidget {
