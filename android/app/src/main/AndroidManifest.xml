@@ -46,11 +46,7 @@
             </intent-filter>
         </activity>
 
-        <!-- flutter_foreground_task 前台服务 -->
-        <service
-            android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
-            android:foregroundServiceType="mediaPlayback|dataSync"
-            android:exported="false"/>
+        <!-- 原生前台通知（MainActivity.kt 管理） -->
 
         <meta-data
             android:name="flutterEmbedding"

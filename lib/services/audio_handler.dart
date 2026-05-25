@@ -1,8 +1,8 @@
 import 'dart:async';
-import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:just_audio/just_audio.dart';
 import '../models/song.dart';
 import 'lyric_parser.dart';
+import '../main.dart' show notifyForeground, stopForeground;
 
 enum PlayMode { sequential, repeatOne, repeatAll, shuffle }
 enum EqPreset { flat, djBass, pop, vocal, classical, heavyBass }
@@ -37,43 +37,18 @@ class AudioPlayerHandler {
       if (state.processingState == ProcessingState.completed) {
         if (_player.hasNext) { _currentIndex++; }
         else if (_playMode == PlayMode.repeatAll) { _currentIndex = 0; _player.seek(Duration.zero, index: 0); return; }
-        else { _currentIndex = -1; _stopForeground(); }
+        else { _currentIndex = -1; _notifyStop(); }
       }
     });
-    _player.playingStream.listen((playing) {
-      if (playing) { _startForeground(); } else { _updateForeground(); }
-    });
+    _player.playingStream.listen((playing) => _notifyUpdate());
   }
 
-  /// 启动前台服务（通知栏保活）
-  Future<void> _startForeground() async {
-    if (!await FlutterForegroundTask.isRunningService) {
-      await FlutterForegroundTask.startService(
-        notificationTitle: '🦊 狸音乐',
-        notificationText: currentSong?.title ?? '正在播放',
-        callback: _foregroundCallback,
-      );
-    } else {
-      _updateForeground();
-    }
+  void _notifyUpdate() {
+    final s = currentSong;
+    if (s != null) notifyForeground(s.title, s.artist.isNotEmpty ? s.artist : '狸音乐', _player.playing);
   }
 
-  void _updateForeground() {
-    final song = currentSong;
-    FlutterForegroundTask.updateService(
-      notificationTitle: '🦊 狸音乐',
-      notificationText: song != null ? '${song.title}${_player.playing ? " ▶" : " ⏸"}' : '已暂停',
-    );
-  }
-
-  void _stopForeground() {
-    FlutterForegroundTask.stopService();
-  }
-
-  @pragma('vm:entry-point')
-  static void _foregroundCallback() {
-    FlutterForegroundTask.setTaskHandler(ForegroundTaskHandler());
-  }
+  void _notifyStop() => stopForeground();
 
   Future<void> loadSongList(List<Song> songs, {int startIndex = 0}) async {
     _songQueue.clear(); _songQueue.addAll(songs); _currentIndex = startIndex;
@@ -82,24 +57,22 @@ class AudioPlayerHandler {
       initialIndex: startIndex,
     );
     _applyPlayMode(); _player.setSpeed(_speed); _player.play();
-    _loadLyrics(); _startForeground();
+    _loadLyrics(); _notifyUpdate();
   }
 
-  void togglePlay() {
-    if (_player.playing) { _player.pause(); } else { _player.play(); }
-  }
+  void togglePlay() { if (_player.playing) { _player.pause(); } else { _player.play(); } }
 
   Future<void> skipToNext() async {
-    if (_player.hasNext) { _currentIndex++; await _player.seekToNext(); _loadLyrics(); _updateForeground(); }
+    if (_player.hasNext) { _currentIndex++; await _player.seekToNext(); _loadLyrics(); _notifyUpdate(); }
   }
 
   Future<void> skipToPrevious() async {
-    if (_player.hasPrevious) { _currentIndex--; await _player.seekToPrevious(); _loadLyrics(); _updateForeground(); }
+    if (_player.hasPrevious) { _currentIndex--; await _player.seekToPrevious(); _loadLyrics(); _notifyUpdate(); }
     else { await _player.seek(Duration.zero); }
   }
 
   Future<void> skipToIndex(int i) async {
-    if (i >= 0 && i < _songQueue.length) { _currentIndex = i; await _player.seek(Duration.zero, index: i); _player.play(); _loadLyrics(); _updateForeground(); }
+    if (i >= 0 && i < _songQueue.length) { _currentIndex = i; await _player.seek(Duration.zero, index: i); _player.play(); _loadLyrics(); _notifyUpdate(); }
   }
 
   Future<void> seek(Duration p) async => _player.seek(p);
@@ -112,9 +85,7 @@ class AudioPlayerHandler {
   String get playModeIcon => ['→', '🔂', '🔁', '🔀'][_playMode.index];
   String get playModeLabel => ['顺序', '单曲', '循环', '随机'][_playMode.index];
 
-  Future<void> cycleSpeed() async {
-    const s = [0.75, 1.0, 1.25, 1.5, 2.0]; _speed = s[(s.indexOf(_speed) + 1) % s.length]; await _player.setSpeed(_speed);
-  }
+  Future<void> cycleSpeed() async { const s = [0.75, 1.0, 1.25, 1.5, 2.0]; _speed = s[(s.indexOf(_speed) + 1) % s.length]; await _player.setSpeed(_speed); }
   String get speedLabel => _speed == 1.0 ? '正常' : '${_speed}x';
 
   void cycleEqPreset() => _eqPreset = EqPreset.values[(_eqPreset.index + 1) % EqPreset.values.length];
@@ -138,11 +109,5 @@ class AudioPlayerHandler {
   void updateLyricPosition(Duration p) => _lyricIndex = LyricParser.findCurrentIndex(_lyrics, p);
   void setOnlineLyrics(List<LyricLine> l) { _lyrics = l; _lyricIndex = -1; }
 
-  void dispose() { _sleepTimer?.cancel(); _stopForeground(); _player.dispose(); }
-}
-
-class ForegroundTaskHandler extends TaskHandler {
-  @override Future<void> onStart(DateTime timestamp, TaskStarter starter) async {}
-  @override Future<void> onRepeatEvent(DateTime timestamp) async {}
-  @override Future<void> onDestroy(DateTime timestamp) async {}
+  void dispose() { _sleepTimer?.cancel(); _notifyStop(); _player.dispose(); }
 }
