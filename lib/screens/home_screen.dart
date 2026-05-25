@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import '../models/song.dart';
@@ -144,6 +145,8 @@ class _HomeScreenState extends State<HomeScreen>
   int _scannedCount = 0;
   int _totalCount = 0;
   String _scanningDir = '';
+  late final AnimationController _gradientCtrl;
+  StreamSubscription? _songSub;
   bool _permissionDenied = false;
 
   @override
@@ -151,6 +154,8 @@ class _HomeScreenState extends State<HomeScreen>
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
     _gradientCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 6))..repeat(reverse: true);
+    // 监听切歌 → 刷新MiniPlayer
+    _songSub = audioHandler.player.sequenceStateStream.listen((_) { if (mounted) setState(() {}); });
     WidgetsBinding.instance.addObserver(this);
     _initAndScan();
   }
@@ -219,7 +224,7 @@ class _HomeScreenState extends State<HomeScreen>
   int _countFav() => _store?.getFavorites().length ?? 0;
 
   @override
-  void dispose() { _tabController.dispose(); _searchCtrl.dispose(); _gradientCtrl.dispose(); WidgetsBinding.instance.removeObserver(this); super.dispose(); }
+  void dispose() { _tabController.dispose(); _searchCtrl.dispose(); _gradientCtrl.dispose(); _songSub?.cancel(); WidgetsBinding.instance.removeObserver(this); super.dispose(); }
 
   @override
   Widget build(BuildContext context) {

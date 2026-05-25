@@ -299,7 +299,19 @@ class AggregateSource extends MusicSource {
   AggregateSource(this._srcs);
   @override String get name => _srcs.map((s) => s.name).join('+');
   @override Future<List<OnlineSong>> search(String keyword, {int page = 1, int limit = 20}) async {
-    for (final s in _srcs) { try { final r = await s.search(keyword, page: page, limit: limit); if (r.isNotEmpty) return r; } catch (_) {} } return [];
+    // 同时查所有源，合并结果去重
+    final all = <String, OnlineSong>{};
+    for (final s in _srcs) {
+      try {
+        final r = await s.search(keyword, page: page, limit: limit);
+        for (final song in r) {
+          all.putIfAbsent('${song.id}_${song.source}', () => song);
+        }
+      } catch (_) {}
+    }
+    final merged = all.values.toList();
+    merged.sort((a, b) => a.fee.compareTo(b.fee));
+    return merged.take(limit * 2).toList();
   }
   @override Future<String?> getPlayUrl(OnlineSong song) async {
     for (final s in _srcs) { try { final u = await s.getPlayUrl(song); if (u != null && u.startsWith('http')) return u; } catch (_) {} } return null;
