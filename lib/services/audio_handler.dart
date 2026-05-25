@@ -69,8 +69,12 @@ class AudioPlayerHandler {
   AudioSource _createAudioSource(Song song) {
     final path = song.filePath;
     if (path.startsWith('http://') || path.startsWith('https://')) {
-      // 直接播放网络URL（不需要headers，MP3地址可直接访问）
-      return AudioSource.uri(Uri.parse(path));
+      // 必须带headers，否则网易云CDN返回0字节
+      return AudioSource.uri(Uri.parse(path), headers: {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36',
+        'Referer': 'https://music.163.com/',
+        'Accept': '*/*',
+      });
     }
     return AudioSource.file(path);
   }

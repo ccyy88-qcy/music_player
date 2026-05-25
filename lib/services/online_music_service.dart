@@ -87,7 +87,7 @@ class NeteaseSource extends MusicSource {
       if (songs == null || songs.isEmpty) return [];
       
       for (final s in songs) {
-        final fee = s.get('fee', 0);
+        final fee = s['fee'] ?? 0;
         final name = s['name'] ?? '';
         final artistStr = ((s['artists'] as List?)?.map((a) => a['name'] ?? '').join('/') ?? '');
         final album = s['album'] as Map?;

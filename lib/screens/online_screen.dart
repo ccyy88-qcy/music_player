@@ -77,49 +77,34 @@ class _OnlineScreenState extends State<OnlineScreen> {
       return;
     }
 
-    // 缓存到本地再播放（just_audio的网络URL在Android上不稳定）
+    // 尝试缓存到本地（传需proper headers + 302处理）
+    // 失败fallback到网络URL（_createAudioSource会带headers）
     String playPath = playUrl;
     if (playUrl.startsWith('http://') || playUrl.startsWith('https://')) {
       try {
         final cacheDir = await getTemporaryDirectory();
-        final safeId = song.id.replaceAll(RegExp(r'[^\w\-]'), '_');
+        final safeId = song.id.replaceAll(RegExp(r'[^\w-]'), '_');
         final cacheFile = File('${cacheDir.path}/online_$safeId.mp3');
-
         if (!await cacheFile.exists() || await cacheFile.length() < 1024) {
           final client = http.Client();
           try {
             var url = playUrl;
             for (int i = 0; i < 5; i++) {
               final req = http.Request('GET', Uri.parse(url));
-              req.headers.addAll({
-                'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36',
-                'Referer': 'https://music.163.com/',
-                'Accept': '*/*',
-              });
+              req.headers.addAll({'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36', 'Referer': 'https://music.163.com/', 'Accept': '*/*'});
               req.followRedirects = false;
               final resp = await client.send(req).timeout(const Duration(seconds: 15));
-              if (resp.statusCode == 302 || resp.statusCode == 301) {
-                url = resp.headers['location'] ?? '';
-                if (url.isEmpty) break;
-                continue;
-              }
+              if (resp.statusCode == 302 || resp.statusCode == 301) { url = resp.headers['location'] ?? ''; if (url.isEmpty) break; continue; }
               if (resp.statusCode == 200) {
                 final bytes = await resp.stream.toBytes();
-                if (bytes.length >= 1024) {
-                  await cacheFile.writeAsBytes(bytes);
-                  playPath = cacheFile.path;
-                }
+                if (bytes.length >= 1024) { await cacheFile.writeAsBytes(bytes); playPath = cacheFile.path; }
               }
               break;
             }
-          } finally {
-            client.close();
-          }
-        } else {
-          playPath = cacheFile.path;
-        }
+          } finally { client.close(); }
+        } else { playPath = cacheFile.path; }
       } catch (_) {
-        // 缓存失败fallback到直接网络播放
+        // 缓存失败 → 走网络URL播放（_createAudioSource会带User-Agent/Referer headers）
       }
     }
 
@@ -163,7 +148,27 @@ class _OnlineScreenState extends State<OnlineScreen> {
       return;
     }
     
-    final path = await DownloadManager.downloadSong(song, playUrl, '/storage/emulated/0/Music/xmp3');
+    // 尝试Download目录（Android 11+可能需要MANAGE_EXTERNAL_STORAGE）
+    String? path = await DownloadManager.downloadSong(song, playUrl, '/storage/emulated/0/Download/xmp3');
+    
+    // 如果Download不可写，退到app外部目录
+    if (path == null) {
+      try {
+        final extDir = await getExternalStorageDirectory();
+        if (extDir != null) {
+          path = await DownloadManager.downloadSong(song, playUrl, '${extDir.path}/Music/xmp3');
+        }
+      } catch (_) {}
+    }
+    
+    // 还不行就退到app文档目录
+    if (path == null) {
+      try {
+        final docDir = await getApplicationDocumentsDirectory();
+        path = await DownloadManager.downloadSong(song, playUrl, '${docDir.path}/下载/xmp3');
+      } catch (_) {}
+    }
+
     if (mounted) {
       setState(() => _downloadingIds.remove(song.id));
       if (path != null) {
@@ -172,7 +177,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('✅ 下载完成: ${song.title} ($sizeStr)'),
           backgroundColor: Colors.green,
-          duration: const Duration(seconds: 3),
+          duration: const Duration(seconds: 5),
         ));
       } else {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
