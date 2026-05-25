@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
-import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import '../models/song.dart';
 import '../services/online_music_service.dart';
@@ -77,40 +76,13 @@ class _OnlineScreenState extends State<OnlineScreen> {
       return;
     }
 
-    // 尝试缓存到本地（传需proper headers + 302处理）
-    // 失败fallback到网络URL（_createAudioSource会带headers）
-    String playPath = playUrl;
-    if (playUrl.startsWith('http://') || playUrl.startsWith('https://')) {
-      try {
-        final cacheDir = await getTemporaryDirectory();
-        final safeId = song.id.replaceAll(RegExp(r'[^\w-]'), '_');
-        final cacheFile = File('${cacheDir.path}/online_$safeId.mp3');
-        if (!await cacheFile.exists() || await cacheFile.length() < 1024) {
-          final client = http.Client();
-          try {
-            var url = playUrl;
-            for (int i = 0; i < 5; i++) {
-              final req = http.Request('GET', Uri.parse(url));
-              req.headers.addAll({'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36', 'Referer': 'https://music.163.com/', 'Accept': '*/*'});
-              req.followRedirects = false;
-              final resp = await client.send(req).timeout(const Duration(seconds: 15));
-              if (resp.statusCode == 302 || resp.statusCode == 301) { url = resp.headers['location'] ?? ''; if (url.isEmpty) break; continue; }
-              if (resp.statusCode == 200) {
-                final bytes = await resp.stream.toBytes();
-                if (bytes.length >= 1024) { await cacheFile.writeAsBytes(bytes); playPath = cacheFile.path; }
-              }
-              break;
-            }
-          } finally { client.close(); }
-        } else { playPath = cacheFile.path; }
-      } catch (_) {
-        // 缓存失败 → 走网络URL播放（_createAudioSource会带User-Agent/Referer headers）
-      }
-    }
-
+    // 直接网络URL播放（_createAudioSource已带User-Agent/Referer headers）
+    // 不缓存 → 即点即播，切换秒级响应
     String? lrcText;
     try { lrcText = await _source!.getLyric(song); } catch (_) {}
-    final tempSong = Song(title: song.title, artist: song.artist, filePath: playPath, category: MusicCategory.pop);
+    // 先停止当前播放、快速加载新歌
+    audioHandler.player.stop();
+    final tempSong = Song(title: song.title, artist: song.artist, filePath: playUrl, category: MusicCategory.pop);
     audioHandler.loadSongList([tempSong], startIndex: 0);
     if (lrcText != null && lrcText.isNotEmpty) {
       audioHandler.setOnlineLyrics(LyricParser.parse(lrcText));
