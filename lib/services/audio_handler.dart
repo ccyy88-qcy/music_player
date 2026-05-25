@@ -77,7 +77,7 @@ class AudioPlayerHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
   @override Future<void> play() async { _player.play(); _onEvent(PlaybackEvent()); }
   @override Future<void> pause() async => _player.pause();
-  @override Future<void> stop() async { await _player.stop(); _currentIndex = -1; await playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.idle)); }
+  @override Future<void> stop() async { await _player.stop(); _currentIndex = -1; playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.idle)); }
 
   @override Future<void> seek(Duration p) async => _player.seek(p);
   @override Future<void> skipToNext() async { if (_player.hasNext) { _currentIndex++; await _player.seekToNext(); _loadLyrics(); _updateMedia(); } }
