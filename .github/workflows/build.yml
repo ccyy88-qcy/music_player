@@ -66,11 +66,6 @@ jobs:
           cd music_player_app
           sed -i 's/signingConfig signingConfigs.debug/signingConfig signingConfigs.release/' android/app/build.gradle.kts 2>/dev/null || true
 
-      - name: Add media library (for MediaStyle)
-        run: |
-          cd music_player_app
-          sed -i '/dependencies {/a\    implementation("androidx.media:media:1.7.0")' android/app/build.gradle.kts 2>/dev/null || true
-
       - name: Install dependencies
         run: cd music_player_app && flutter pub get
 
