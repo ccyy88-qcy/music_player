@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
-import 'package:encrypt/encrypt.dart' as encrypt;
+import 'package:pointycastle/export.dart';
 import 'package:http/http.dart' as http;
 import '../models/song.dart';
 import 'storage_manager.dart';
@@ -120,22 +120,16 @@ class NeteaseSource extends MusicSource {
     return null;
   }
 
-  /// 网易云 weapi 加密
+  /// 网易云 weapi 加密（AES-128-CBC + RSA）
   Map<String, String>? _encryptRequest(String text) {
     try {
       const modulus = '00e0b509f6259df8642dbc35662901477df22677ec152b5ff68ace615bb7b725152b3ab17a876aea8a5aa76d2e417629ec4ee341f56135fccf695280104e0312ecbda92557c93870114af6c9d05c4f7f0c3685b7a46bee255932575cce10b424d813cfe4875d3e82047b97ddef52741d546b8e289dc6935b3ece0462db0a22b8e7';
       const nonce = '0CoJUm6Qyw8W8jud';
       const pubKey = '010001';
 
-      // 1. 生成随机16字节密钥
       final secKey = _randomString(16);
-
-      // 2. AES-128-CBC 加密（第一次，用 nonce）
       final encText1 = _aesEncrypt(text, nonce);
-      // 3. AES-128-CBC 加密（第二次，用 secKey）
       final encText2 = _aesEncrypt(encText1, secKey);
-
-      // 4. RSA 加密 secKey
       final encSecKey = _rsaEncrypt(secKey, pubKey, modulus);
 
       return {'encText': encText2, 'encSecKey': encSecKey};
@@ -148,22 +142,28 @@ class NeteaseSource extends MusicSource {
     // PKCS7 padding
     final blockSize = 16;
     final padLen = blockSize - (textBytes.length % blockSize);
-    final padded = List<int>.from(textBytes)..addAll(List.filled(padLen, padLen));
+    final padded = Uint8List(textBytes.length + padLen);
+    padded.setAll(0, textBytes);
+    padded.fillRange(textBytes.length, padded.length, padLen);
 
-    final encrypter = encrypt.Encrypter(encrypt.AES(encrypt.Key(keyBytes), mode: encrypt.AESMode.cbc, padding: null));
-    final iv = List<int>.filled(16, 0); // weapi 使用全0 IV
-    final encrypted = encrypter.encryptBytes(padded, iv: encrypt.IV(iv));
-    return base64.encode(encrypted.bytes);
+    // AES-128-CBC 加密（使用 crypto 包的 AES）
+    final cipher = CBCBlockCipher(AESFastEngine());
+    final params = ParametersWithIV(KeyParameter(keyBytes), Uint8List(16));
+    cipher.init(true, params);
+
+    final output = Uint8List(padded.length);
+    var offset = 0;
+    while (offset < padded.length) {
+      offset += cipher.processBlock(padded, offset, output, offset);
+    }
+    return base64.encode(output);
   }
 
   String _rsaEncrypt(String text, String pubKey, String modulus) {
-    // 反转文本
     final reversed = text.split('').reversed.join('');
-    // 转大整数
     final textBigInt = BigInt.parse(utf8.encode(reversed).map((b) => b.toRadixString(16).padLeft(2, '0')).join(), radix: 16);
     final keyBigInt = BigInt.parse(pubKey, radix: 16);
     final modBigInt = BigInt.parse(modulus, radix: 16);
-    // RSA 加密: c = m^e mod n
     final result = textBigInt.modPow(keyBigInt, modBigInt);
     return result.toRadixString(16).padLeft(256, '0');
   }
