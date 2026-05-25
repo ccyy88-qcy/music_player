@@ -145,7 +145,6 @@ class _HomeScreenState extends State<HomeScreen>
   int _scannedCount = 0;
   int _totalCount = 0;
   String _scanningDir = '';
-  late final AnimationController _gradientCtrl;
   StreamSubscription? _songSub;
   bool _permissionDenied = false;
 
