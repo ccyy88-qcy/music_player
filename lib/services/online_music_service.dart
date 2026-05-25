@@ -68,38 +68,40 @@ class NeteaseSource extends MusicSource {
   @override String get name => '网易云';
 
   @override Future<List<OnlineSong>> search(String keyword, {int page = 1, limit = 20}) async {
-    // 如果关键词不包含歌手名，尝试加上常见歌手名过滤翻唱
-    String searchKey = keyword;
+    final results = <OnlineSong>[];
+    
     // 搜索时排除明显的翻唱关键词
-    final coverKeywords = ['钢琴版', '钢琴曲', 'Cover', 'cover', '翻唱', '翻弹', '改编', '指弹', '纯音乐', '伴奏', 'DJ版', 'Remix'];
-    final hasCover = coverKeywords.any((kw) => keyword.contains(kw));
-    if (!hasCover) {
-      // 在搜索词后面加上过滤条件
-      searchKey = '$keyword -钢琴 -翻唱 -Cover -cover -改编 -翻弹 -指弹 -纯音乐 -伴奏';
+    final coverKeywords = ['钢琴版', '钢琴曲', 'Cover', 'cover', '翻唱', '翻弹', '改编', '指弹', '纯音乐', '伴奏', 'DJ版', 'Remix', 'Live'];
+    String searchKey = keyword;
+    if (!coverKeywords.any((kw) => keyword.contains(kw))) {
+      searchKey = '$keyword -钢琴 -翻唱 -Cover -改编 -指弹 -纯音乐 -伴奏 -Live';
     }
     
     final url = 'https://music.163.com/api/search/get?s=${Uri.encodeComponent(searchKey)}&type=1&limit=$limit&offset=${(page - 1) * limit}';
     final resp = await http.get(Uri.parse(url), headers: _h()).timeout(const Duration(seconds: 10));
     if (resp.statusCode != 200) return [];
+    
     try {
       final d = jsonDecode(resp.body);
       final songs = d['result']?['songs'] as List?;
       if (songs == null || songs.isEmpty) return [];
       
-      final results = <OnlineSong>[];
       for (final s in songs) {
-        final artists = s['artists'] as List?;
-        final album = s['album'] as Map?;
         final fee = s.get('fee', 0);
         final name = s['name'] ?? '';
-        final artistStr = artists?.map((a) => a['name'] ?? '').join('/') ?? '';
+        final artistStr = ((s['artists'] as List?)?.map((a) => a['name'] ?? '').join('/') ?? '');
+        final album = s['album'] as Map?;
         
-        // 跳过VIP专享歌曲（fee=8）
-        if (fee == 8) continue;
+        // 过滤VIP专享（fee=8）— 这些播放地址通常是30秒试听
+        if (fee >= 8) continue;
         
-        // 跳过明显的翻唱
-        final isCover = coverKeywords.any((kw) => name.contains(kw));
+        // 过滤明显翻唱
+        bool isCover = coverKeywords.any((kw) => name.contains(kw));
         if (isCover) continue;
+        
+        // 过滤时长太短的（<60秒通常是试听或片段）
+        final duration = s['duration'] as int? ?? 0;
+        if (duration > 0 && duration < 60000) continue;
         
         results.add(OnlineSong(
           id: s['id'].toString(),
@@ -108,13 +110,16 @@ class NeteaseSource extends MusicSource {
           album: album?['name'] ?? '',
           coverUrl: album?['picUrl'],
           source: 'netease',
-          duration: s['duration'],
+          duration: duration,
+          fee: fee,
         ));
       }
       
-      // 排序：优先免费歌曲，然后按时长排序（长的更可能是完整版）
+      // 排序：免费优先 > 时长优先
       results.sort((a, b) {
-        // 优先时长长的（完整版通常比试听长）
+        // 免费优先
+        if (a.fee != b.fee) return a.fee.compareTo(b.fee);
+        // 时长优先
         return (b.duration ?? 0).compareTo(a.duration ?? 0);
       });
       
