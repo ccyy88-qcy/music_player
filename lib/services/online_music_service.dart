@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import '../models/song.dart';
 import 'storage_manager.dart';
@@ -222,6 +223,32 @@ class KugouSource extends MusicSource {
       }
     } catch (_) {}
     return null;
+  }
+}
+
+class CustomApiSource extends MusicSource {
+  final String _name, _searchUrl, _playUrl, _lyricUrl;
+  CustomApiSource({required String name, required String searchUrl, required String playUrl, required String lyricUrl})
+    : _name = name, _searchUrl = searchUrl, _playUrl = playUrl, _lyricUrl = lyricUrl;
+  @override String get name => _name;
+
+  @override Future<List<OnlineSong>> search(String keyword, {int page = 1, int limit = 20}) async {
+    final u = _searchUrl.replaceAll('{keyword}', Uri.encodeComponent(keyword)).replaceAll('{page}', '$page').replaceAll('{limit}', '$limit');
+    final r = await http.get(Uri.parse(u), headers: _h()).timeout(const Duration(seconds: 10));
+    if (r.statusCode != 200) return [];
+    try { final l = (jsonDecode(r.body)['data'] ?? jsonDecode(r.body)['list'] ?? jsonDecode(r.body)['result'] ?? jsonDecode(r.body)['songs'] ?? []) as List; return l.map((e) => OnlineSong.fromJson(e as Map<String, dynamic>, source: _name)).toList(); } catch (_) { return []; }
+  }
+  @override Future<String?> getPlayUrl(OnlineSong song, {String quality = '320'}) async {
+    final u = _playUrl.replaceAll('{id}', song.id).replaceAll('{quality}', quality);
+    final r = await http.get(Uri.parse(u), headers: _h()).timeout(const Duration(seconds: 8));
+    if (r.statusCode != 200) return null;
+    try { return (jsonDecode(r.body)['url'] ?? jsonDecode(r.body)['data']?['url'] ?? jsonDecode(r.body)['playurl'])?.toString(); } catch (_) { return null; }
+  }
+  @override Future<String?> getLyric(OnlineSong song) async {
+    final u = _lyricUrl.replaceAll('{id}', song.id);
+    final r = await http.get(Uri.parse(u), headers: _h()).timeout(const Duration(seconds: 6));
+    if (r.statusCode != 200) return null;
+    try { return (jsonDecode(r.body)['lyric'] ?? jsonDecode(r.body)['lrc'] ?? jsonDecode(r.body)['data']?['lyric'])?.toString(); } catch (_) { return null; }
   }
 }
 
