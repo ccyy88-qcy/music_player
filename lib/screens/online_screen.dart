@@ -5,6 +5,7 @@ import '../models/song.dart';
 import '../services/online_music_service.dart';
 import '../services/audio_handler.dart';
 import '../services/lyric_parser.dart';
+import '../widgets/music_widgets.dart';
 import '../main.dart' show audioHandler, AppColors;
 import 'player_screen.dart';
 
@@ -26,6 +27,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
   int _page = 1;
   String? _playingId;
   Set<String> _downloadingIds = {};
+  final List<Map<String, dynamic>> _downloadBubbles = [];
   MusicSource? _source;
 
   @override
@@ -143,44 +145,69 @@ class _OnlineScreenState extends State<OnlineScreen> {
 
     if (mounted) {
       setState(() => _downloadingIds.remove(song.id));
-      if (path != null) {
-        final file = File(path);
-        final sizeStr = file.existsSync() ? '${(file.lengthSync() / 1024 / 1024).toStringAsFixed(1)}MB' : '';
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('✅ 下载完成: ${song.title} ($sizeStr)'),
-          backgroundColor: Colors.green,
-          duration: const Duration(seconds: 5),
-        ));
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('❌ 下载失败，可能该歌曲需要VIP或有版权限制'),
-          backgroundColor: Colors.red,
-          duration: Duration(seconds: 3),
-        ));
-      }
+      _addBubble(path != null, song.title, path);
     }
+  }
+
+  void _addBubble(bool success, String title, String? path) {
+    String? sizeStr;
+    if (path != null && success) {
+      final f = File(path);
+      if (f.existsSync()) sizeStr = '${(f.lengthSync() / 1024 / 1024).toStringAsFixed(1)}MB';
+    }
+    final bubble = <String, dynamic>{'title': title, 'success': success, 'size': sizeStr, 'key': UniqueKey()};
+    setState(() => _downloadBubbles.insert(0, bubble));
+    // 超过3个自动移除最旧的
+    if (_downloadBubbles.length > 3) _downloadBubbles.removeLast();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Column(children: [
-      Container(
-        padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 4, left: 12, right: 12, bottom: 8),
-        decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF1A1A2E), Color(0xFF16213E)])),
-        child: Row(children: [
-          Expanded(child: Container(height: 42, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(21)), child: TextField(controller: _searchCtrl, style: const TextStyle(color: Colors.white, fontSize: 15), decoration: InputDecoration(hintText: '🔍 搜索在线歌曲...', hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.35)), prefixIcon: const Icon(Icons.search_rounded, color: Colors.white38, size: 22), border: InputBorder.none, contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10)), onSubmitted: (_) => _search(), textInputAction: TextInputAction.search))),
-          const SizedBox(width: 8),
-          _searching ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.pinkAccent)) : IconButton(icon: const Icon(Icons.send_rounded, color: Colors.pinkAccent, size: 24), onPressed: _search),
+    return Stack(
+      children: [
+        Column(children: [
+          Container(
+            padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 4, left: 12, right: 12, bottom: 8),
+            decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF1A1A2E), Color(0xFF16213E)])),
+            child: Row(children: [
+              Expanded(child: Container(height: 42, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(21)), child: TextField(controller: _searchCtrl, style: const TextStyle(color: Colors.white, fontSize: 15), decoration: InputDecoration(hintText: '🔍 搜索在线歌曲...', hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.35)), prefixIcon: const Icon(Icons.search_rounded, color: Colors.white38, size: 22), border: InputBorder.none, contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10)), onSubmitted: (_) => _search(), textInputAction: TextInputAction.search))),
+              const SizedBox(width: 8),
+              _searching ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.pinkAccent)) : IconButton(icon: const Icon(Icons.send_rounded, color: Colors.pinkAccent, size: 24), onPressed: _search),
+            ]),
+          ),
+          Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4), color: Colors.black26, child: Row(children: [
+            Icon(Icons.cloud_download_rounded, size: 14, color: Colors.green.withValues(alpha: 0.7)), const SizedBox(width: 4),
+            Text(_source?.name ?? '加载中...', style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 11)),
+            const Spacer(),
+            if (_results.isNotEmpty) Text('${_results.length} 首', style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 11)),
+          ])),
+          Expanded(child: _buildResults()),
         ]),
-      ),
-      Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4), color: Colors.black26, child: Row(children: [
-        Icon(Icons.cloud_download_rounded, size: 14, color: Colors.green.withValues(alpha: 0.7)), const SizedBox(width: 4),
-        Text(_source?.name ?? '加载中...', style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 11)),
-        const Spacer(),
-        if (_results.isNotEmpty) Text('${_results.length} 首', style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 11)),
-      ])),
-      Expanded(child: _buildResults()),
-    ]);
+        // 悬浮下载气泡
+        Positioned(
+          left: 16, right: 16, bottom: 0,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: _downloadBubbles.asMap().entries.map((e) {
+              final b = e.value;
+              return Padding(
+                padding: EdgeInsets.only(bottom: e.key == 0 ? 8.0 : 0),
+                child: DownloadBubble(
+                  key: b['key'],
+                  title: b['title'] as String,
+                  isSuccess: b['success'] as bool,
+                  size: b['size'] as String?,
+                  onDismiss: () {
+                    if (mounted) setState(() => _downloadBubbles.remove(b));
+                  },
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildResults() {

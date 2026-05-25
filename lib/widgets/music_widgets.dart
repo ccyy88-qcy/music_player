@@ -53,7 +53,6 @@ class GradientCircle extends StatelessWidget {
   final double size;
   final IconData? icon;
   final double iconSize;
-
   const GradientCircle({super.key, this.size = 44, this.icon, this.iconSize = 22});
 
   @override
@@ -85,16 +84,12 @@ class MiniPlayer extends StatelessWidget {
       child: Container(
         height: 64,
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [AppColors.surface, Color(0xFF15152A)],
-            begin: Alignment.topCenter, end: Alignment.bottomCenter,
-          ),
+          gradient: const LinearGradient(colors: [AppColors.surface, Color(0xFF15152A)], begin: Alignment.topCenter, end: Alignment.bottomCenter),
           border: Border(top: BorderSide(color: AppColors.glassBorder, width: 0.5)),
           boxShadow: [BoxShadow(color: AppColors.glowOrange.withValues(alpha: 0.1), blurRadius: 12, offset: const Offset(0, -4))],
         ),
         child: Row(children: [
           const SizedBox(width: 10),
-          // 播放图标圆
           StreamBuilder<bool>(
             stream: audioHandler.player.playingStream,
             builder: (_, snap) => Container(
@@ -108,32 +103,17 @@ class MiniPlayer extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-          // 歌曲信息
-          Expanded(child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(song.title, style: const TextStyle(color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis),
-              const SizedBox(height: 2),
-              Row(children: [
-                Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1), decoration: BoxDecoration(color: (song.category == MusicCategory.dj ? AppColors.foxOrange : AppColors.purple).withValues(alpha: 0.3), borderRadius: BorderRadius.circular(4)), child: Text(song.category == MusicCategory.dj ? 'DJ' : '流行', style: TextStyle(fontSize: 9, color: song.category == MusicCategory.dj ? AppColors.foxOrange : AppColors.purple, fontWeight: FontWeight.w600))),
-                const SizedBox(width: 6),
-                Text(audioHandler.eqPresetLabel, style: TextStyle(color: AppColors.textSecondary.withValues(alpha: 0.7), fontSize: 11)),
-              ]),
-            ],
-          )),
-          // 播放控制
-          StreamBuilder<bool>(
-            stream: audioHandler.player.playingStream,
-            builder: (_, snap) => IconButton(
-              icon: Icon(snap.data == true ? Icons.pause_rounded : Icons.play_arrow_rounded, color: AppColors.textPrimary),
-              onPressed: audioHandler.togglePlay,
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.skip_next_rounded, color: AppColors.textSecondary),
-            onPressed: () => audioHandler.skipToNext(),
-          ),
+          Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(song.title, style: const TextStyle(color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 2),
+            Row(children: [
+              Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1), decoration: BoxDecoration(color: (song.category == MusicCategory.dj ? AppColors.foxOrange : AppColors.purple).withValues(alpha: 0.3), borderRadius: BorderRadius.circular(4)), child: Text(song.category == MusicCategory.dj ? 'DJ' : '流行', style: TextStyle(fontSize: 9, color: song.category == MusicCategory.dj ? AppColors.foxOrange : AppColors.purple, fontWeight: FontWeight.w600))),
+              const SizedBox(width: 6),
+              Text(audioHandler.eqPresetLabel, style: TextStyle(color: AppColors.textSecondary.withValues(alpha: 0.7), fontSize: 11)),
+            ]),
+          ])),
+          StreamBuilder<bool>(stream: audioHandler.player.playingStream, builder: (_, snap) => IconButton(icon: Icon(snap.data == true ? Icons.pause_rounded : Icons.play_arrow_rounded, color: AppColors.textPrimary), onPressed: audioHandler.togglePlay)),
+          IconButton(icon: const Icon(Icons.skip_next_rounded, color: AppColors.textSecondary), onPressed: () => audioHandler.skipToNext()),
           const SizedBox(width: 4),
         ]),
       ),
@@ -157,15 +137,7 @@ class CategoryHeader extends StatelessWidget {
         const SizedBox(width: 10),
         Text(isDJ ? '🔥 DJ' : '🎵 流行', style: const TextStyle(color: AppColors.textPrimary, fontSize: 17, fontWeight: FontWeight.bold)),
         const Spacer(),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          decoration: BoxDecoration(
-            color: AppColors.glass,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.glassBorder),
-          ),
-          child: Text('$count 首', style: TextStyle(color: AppColors.textSecondary.withValues(alpha: 0.8), fontSize: 12)),
-        ),
+        Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: AppColors.glass, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.glassBorder)), child: Text('$count 首', style: TextStyle(color: AppColors.textSecondary.withValues(alpha: 0.8), fontSize: 12))),
       ]),
     );
   }
@@ -178,7 +150,6 @@ class SongTile extends StatelessWidget {
   final bool isFavorite;
   final VoidCallback onTap;
   final VoidCallback? onFavorite;
-
   const SongTile({super.key, required this.song, required this.isPlaying, this.isFavorite = false, required this.onTap, this.onFavorite});
 
   @override
@@ -198,62 +169,95 @@ class SongTile extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               child: Row(children: [
-                // 封面/图标
-                Container(
-                  width: 44, height: 44,
+                Container(width: 44, height: 44,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(10),
-                    gradient: LinearGradient(
-                      colors: isDJ ? [const Color(0xFFFF6B35), const Color(0xFFE85D2C)] : [const Color(0xFFA855F7), const Color(0xFF7C3AED)],
-                    ),
+                    gradient: LinearGradient(colors: isDJ ? [const Color(0xFFFF6B35), const Color(0xFFE85D2C)] : [const Color(0xFFA855F7), const Color(0xFF7C3AED)]),
                     boxShadow: isPlaying ? [BoxShadow(color: (isDJ ? AppColors.glowOrange : AppColors.glowPurple), blurRadius: 8)] : null,
                   ),
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 300),
-                    child: isPlaying
-                      ? _EqualizerIcon(key: ValueKey('eq_${song.filePath}'))
-                      : Icon(Icons.music_note_rounded, color: Colors.white, size: 22),
-                  ),
+                  child: AnimatedSwitcher(duration: const Duration(milliseconds: 300), child: isPlaying ? _EqualizerIcon(key: ValueKey('eq_${song.filePath}')) : const Icon(Icons.music_note_rounded, color: Colors.white, size: 22)),
                 ),
                 const SizedBox(width: 12),
-                // 文本
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(song.title, style: TextStyle(
-                    color: isPlaying ? AppColors.foxOrange : AppColors.textPrimary,
-                    fontWeight: isPlaying ? FontWeight.w700 : FontWeight.w500,
-                    fontSize: 14,
-                  ), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  Text(song.title, style: TextStyle(color: isPlaying ? AppColors.foxOrange : AppColors.textPrimary, fontWeight: isPlaying ? FontWeight.w700 : FontWeight.w500, fontSize: 14), maxLines: 1, overflow: TextOverflow.ellipsis),
                   const SizedBox(height: 3),
                   Row(children: [
                     Text(isDJ ? 'DJ' : '流行', style: TextStyle(fontSize: 11, color: isPlaying ? AppColors.foxLight : AppColors.textSecondary)),
-                    if (song.playCount > 0) ...[
-                      const SizedBox(width: 8),
-                      Icon(Icons.play_circle_outline, size: 10, color: AppColors.textSecondary.withValues(alpha: 0.5)),
-                      const SizedBox(width: 2),
-                      Text('${song.playCount}', style: TextStyle(fontSize: 10, color: AppColors.textSecondary.withValues(alpha: 0.5))),
-                    ],
+                    if (song.playCount > 0) ...[const SizedBox(width: 8), Icon(Icons.play_circle_outline, size: 10, color: AppColors.textSecondary.withValues(alpha: 0.5)), const SizedBox(width: 2), Text('${song.playCount}', style: TextStyle(fontSize: 10, color: AppColors.textSecondary.withValues(alpha: 0.5)))],
                   ]),
                 ])),
-                // 右侧操作
-                if (isPlaying)
-                  Container(
-                    width: 24, height: 24,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: AppColors.foxOrange.withValues(alpha: 0.2),
-                    ),
-                    child: const Icon(Icons.volume_up_rounded, color: AppColors.foxOrange, size: 14),
-                  ),
-                if (onFavorite != null)
-                  IconButton(
-                    icon: Icon(isFavorite ? Icons.star_rounded : Icons.star_outline_rounded,
-                      color: isFavorite ? AppColors.foxOrange : AppColors.textSecondary.withValues(alpha: 0.4), size: 20),
-                    onPressed: onFavorite,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 36),
-                  ),
+                if (isPlaying) Container(width: 24, height: 24, decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.foxOrange.withValues(alpha: 0.2)), child: const Icon(Icons.volume_up_rounded, color: AppColors.foxOrange, size: 14)),
+                if (onFavorite != null) IconButton(icon: Icon(isFavorite ? Icons.star_rounded : Icons.star_outline_rounded, color: isFavorite ? AppColors.foxOrange : AppColors.textSecondary.withValues(alpha: 0.4), size: 20), onPressed: onFavorite, padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 36)),
               ]),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 悬浮下载气泡
+class DownloadBubble extends StatefulWidget {
+  final String title;
+  final bool isSuccess;
+  final String? size;
+  final VoidCallback onDismiss;
+
+  const DownloadBubble({
+    super.key,
+    required this.title,
+    required this.isSuccess,
+    this.size,
+    required this.onDismiss,
+  });
+
+  @override
+  State<DownloadBubble> createState() => _DownloadBubbleState();
+}
+
+class _DownloadBubbleState extends State<DownloadBubble> with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<Offset> _slideAnim;
+  late Animation<double> _scaleAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 400));
+    _slideAnim = Tween<Offset>(begin: const Offset(0, 0.5), end: Offset.zero).animate(CurvedAnimation(parent: _ctrl, curve: Curves.elasticOut));
+    _scaleAnim = Tween<double>(begin: 0.3, end: 1.0).animate(CurvedAnimation(parent: _ctrl, curve: Curves.elasticOut));
+    _ctrl.forward();
+    Future.delayed(const Duration(seconds: 3), () { if (mounted) _ctrl.reverse().then((_) => widget.onDismiss()); });
+  }
+
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    return SlideTransition(
+      position: _slideAnim,
+      child: ScaleTransition(
+        scale: _scaleAnim,
+        child: GestureDetector(
+          onTap: () => _ctrl.reverse().then((_) => widget.onDismiss()),
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 80),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(colors: widget.isSuccess ? [const Color(0xFF00C853), const Color(0xFF00E676)] : [const Color(0xFFFF1744), const Color(0xFFFF5252)]),
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [BoxShadow(color: (widget.isSuccess ? const Color(0xFF00C853) : const Color(0xFFFF1744)).withValues(alpha: 0.4), blurRadius: 16, spreadRadius: 2)],
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Container(width: 28, height: 28, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.25), shape: BoxShape.circle), child: Icon(widget.isSuccess ? Icons.check_rounded : Icons.close_rounded, color: Colors.white, size: 18)),
+              const SizedBox(width: 10),
+              Flexible(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                Text(widget.isSuccess ? '下载完成' : '下载失败', style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                Text(widget.isSuccess ? '${widget.title} ${widget.size ?? ""}' : widget.title, style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
+              ])),
+            ]),
           ),
         ),
       ),
@@ -273,10 +277,7 @@ class _EqualizerIconState extends State<_EqualizerIcon> with SingleTickerProvide
   late AnimationController _controller;
 
   @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 800))..repeat();
-  }
+  void initState() { super.initState(); _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 800))..repeat(); }
 
   @override
   void dispose() { _controller.dispose(); super.dispose(); }

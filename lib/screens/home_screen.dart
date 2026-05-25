@@ -345,48 +345,62 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Widget _tabBar() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(children: [
-          _tabItem('🔥 DJ', 0, _filteredSongs[MusicCategory.dj]?.length ?? 0),
-          _tabItem('🎵 流行', 1, _filteredSongs[MusicCategory.pop]?.length ?? 0),
-          _tabItem('⭐ 收藏', 2, _countFav()),
-          _tabItem('🌐 在线', 3, null),
-        ]),
-      ),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      child: Row(children: [
+        _tabItem('DJ', 0, _filteredSongs[MusicCategory.dj]?.length ?? 0, Icons.bolt_rounded),
+        _tabItem('流行', 1, _filteredSongs[MusicCategory.pop]?.length ?? 0, Icons.headphones_rounded),
+        _tabItem('收藏', 2, _countFav(), Icons.star_rounded),
+        _tabItem('在线', 3, null, Icons.language_rounded),
+      ]),
     );
   }
 
-  Widget _tabItem(String label, int index, int? count) {
+  Widget _tabItem(String label, int index, int? count, IconData icon) {
     final selected = _tabController.index == index;
     return GestureDetector(
       onTap: () => _tabController.animateTo(index),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-        margin: const EdgeInsets.only(right: 8),
+        duration: const Duration(milliseconds: 200),
+        margin: const EdgeInsets.symmetric(horizontal: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: selected ? AppColors.foxOrange.withValues(alpha: 0.18) : AppColors.glass,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: selected ? AppColors.foxOrange.withValues(alpha: 0.5) : AppColors.glassBorder),
-          boxShadow: selected ? [BoxShadow(color: AppColors.glowOrange, blurRadius: 8)] : null,
+          color: selected ? AppColors.foxOrange.withValues(alpha: 0.12) : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
         ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Text(label, style: TextStyle(
-            color: selected ? AppColors.foxOrange : AppColors.textSecondary,
-            fontWeight: selected ? FontWeight.w700 : FontWeight.normal,
-            fontSize: 13,
-          )),
-          if (count != null) ...[
-            const SizedBox(width: 4),
-            Text('$count', style: TextStyle(
-              color: selected ? AppColors.foxOrange.withValues(alpha: 0.6) : AppColors.textSecondary.withValues(alpha: 0.4),
-              fontSize: 11,
-            )),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 18, color: selected ? AppColors.foxOrange : AppColors.textSecondary.withValues(alpha: 0.5)),
+            const SizedBox(height: 2),
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              Text(label, style: TextStyle(
+                color: selected ? AppColors.foxOrange : AppColors.textSecondary,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                fontSize: 10,
+              )),
+              if (count != null) ...[
+                const SizedBox(width: 2),
+                Text('$count', style: TextStyle(
+                  color: selected ? AppColors.foxOrange.withValues(alpha: 0.6) : AppColors.textSecondary.withValues(alpha: 0.3),
+                  fontSize: 9,
+                )),
+              ],
+            ]),
+            // 选中指示器
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              margin: const EdgeInsets.only(top: 3),
+              width: selected ? 16 : 0,
+              height: 2,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(1),
+                color: AppColors.foxOrange,
+                boxShadow: selected ? [BoxShadow(color: AppColors.glowOrange, blurRadius: 4)] : null,
+              ),
+            ),
           ],
-        ]),
+        ),
       ),
     );
   }
