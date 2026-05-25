@@ -5,6 +5,7 @@ import '../models/song.dart';
 import 'lyric_parser.dart';
 
 const _channel = MethodChannel('com.alee.music_player/service');
+const _mediaChannel = MethodChannel('com.alee.music_player/media');
 
 enum PlayMode { sequential, repeatOne, repeatAll, shuffle }
 enum EqPreset { flat, djBass, pop, vocal, classical, heavyBass }
@@ -43,6 +44,16 @@ class AudioPlayerHandler {
       }
     });
     _player.playingStream.listen((_) => _notify());
+
+    // 监听通知栏/锁屏按钮点击（Native → Flutter）
+    _mediaChannel.setMethodCallHandler((call) async {
+      switch (call.method) {
+        case 'playPause': togglePlay(); break;
+        case 'next': await skipToNext(); break;
+        case 'prev': await skipToPrevious(); break;
+        case 'stop': _stopFg(); _player.stop(); break;
+      }
+    });
   }
 
   void _notify() {

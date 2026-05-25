@@ -14,42 +14,55 @@ class MainActivity : FlutterActivity() {
 
     companion object {
         const val CHANNEL = "com.alee.music_player/service"
+        // 媒体控制通道（通知栏按钮 → Flutter）
+        const val MEDIA_CHANNEL = "com.alee.music_player/media"
     }
+
+    private var mediaChannel: MethodChannel? = null
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
+        // 服务控制通道（Flutter → Native）
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "start" -> {
-                        val title = call.argument<String>("title") ?: "🦊 狸音乐"
-                        val artist = call.argument<String>("artist") ?: ""
-                        val playing = call.argument<Boolean>("playing") ?: true
-                        startMusicService(title, artist, playing)
+                        startMusicService(
+                            call.argument("title") ?: "狸音乐",
+                            call.argument("artist") ?: "",
+                            call.argument("playing") ?: true
+                        )
                         result.success(true)
                     }
                     "update" -> {
-                        val title = call.argument<String>("title") ?: "🦊 狸音乐"
-                        val artist = call.argument<String>("artist") ?: ""
-                        val playing = call.argument<Boolean>("playing") ?: false
-                        updateMusicService(title, artist, playing)
+                        updateMusicService(
+                            call.argument("title") ?: "狸音乐",
+                            call.argument("artist") ?: "",
+                            call.argument("playing") ?: false
+                        )
                         result.success(true)
                     }
-                    "stop" -> {
-                        stopMusicService()
-                        result.success(true)
-                    }
-                    "requestBattery" -> {
-                        requestIgnoreBatteryOptimizations()
-                        result.success(true)
-                    }
-                    "isBatteryIgnored" -> {
-                        result.success(isIgnoringBatteryOptimizations())
-                    }
+                    "stop" -> { stopMusicService(); result.success(true) }
+                    "requestBattery" -> { requestBatteryOpt(); result.success(true) }
+                    "isBatteryIgnored" -> { result.success(isBatteryIgnored()) }
                     else -> result.notImplemented()
                 }
             }
+
+        // 媒体控制通道（Native → Flutter 按钮事件）
+        mediaChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, MEDIA_CHANNEL)
+    }
+
+    /** 处理来自通知栏按钮的 Intent */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        when (intent.action) {
+            MusicService.ACTION_PLAY_PAUSE -> mediaChannel?.invokeMethod("playPause", null)
+            MusicService.ACTION_NEXT -> mediaChannel?.invokeMethod("next", null)
+            MusicService.ACTION_PREV -> mediaChannel?.invokeMethod("prev", null)
+            MusicService.ACTION_STOP -> mediaChannel?.invokeMethod("stop", null)
+        }
     }
 
     private fun startMusicService(title: String, artist: String, playing: Boolean) {
@@ -66,10 +79,6 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun updateMusicService(title: String, artist: String, playing: Boolean) {
-        if (!MusicService.isRunning) {
-            startMusicService(title, artist, playing)
-            return
-        }
         val intent = Intent(this, MusicService::class.java).apply {
             putExtra("title", title)
             putExtra("artist", artist)
@@ -79,13 +88,10 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun stopMusicService() {
-        val intent = Intent(this, MusicService::class.java).apply {
-            action = MusicService.ACTION_STOP
-        }
-        startService(intent)
+        startService(Intent(this, MusicService::class.java).apply { action = MusicService.ACTION_STOP })
     }
 
-    private fun requestIgnoreBatteryOptimizations() {
+    private fun requestBatteryOpt() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             val pm = getSystemService(POWER_SERVICE) as PowerManager
             if (!pm.isIgnoringBatteryOptimizations(packageName)) {
@@ -97,7 +103,7 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun isIgnoringBatteryOptimizations(): Boolean {
+    private fun isBatteryIgnored(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             (getSystemService(POWER_SERVICE) as PowerManager).isIgnoringBatteryOptimizations(packageName)
         } else true
