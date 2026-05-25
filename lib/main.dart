@@ -21,7 +21,14 @@ void main() {
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(statusBarColor: Colors.transparent, statusBarIconBrightness: Brightness.light),
   );
+  _requestBatteryOptimization();
   runApp(const MusicPlayerApp());
+}
+
+/// 请求忽略电池优化（防止后台被杀）
+void _requestBatteryOptimization() {
+  const channel = MethodChannel('com.alee.music_player/battery');
+  channel.invokeMethod('requestIgnoreBatteryOptimizations');
 }
 
 class MusicPlayerApp extends StatelessWidget {
