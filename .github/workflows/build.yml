@@ -40,9 +40,10 @@ jobs:
           # Copy network config
           mkdir -p tmp_project/android/app/src/main/res/xml
           cp android/app/src/main/res/xml/network_security_config.xml tmp_project/android/app/src/main/res/xml/ 2>/dev/null || true
-          # Copy MainActivity.kt
+          # Copy MainActivity.kt + MusicService.kt
           mkdir -p tmp_project/android/app/src/main/kotlin/com/alee/music_player
           cp android/app/src/main/kotlin/com/alee/music_player/MainActivity.kt tmp_project/android/app/src/main/kotlin/com/alee/music_player/ 2>/dev/null || true
+          cp android/app/src/main/kotlin/com/alee/music_player/MusicService.kt tmp_project/android/app/src/main/kotlin/com/alee/music_player/ 2>/dev/null || true
           mv tmp_project music_player_app
           cd music_player_app
 
