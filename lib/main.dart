@@ -14,7 +14,6 @@ Future<void> main() async {
     config: const AudioServiceConfig(
       androidNotificationChannelId: 'com.alee.music_player.channel',
       androidNotificationChannelName: '狸音乐',
-      androidNotificationOngoing: true,
       androidStopForegroundOnPause: false,
       androidNotificationClickStartsActivity: true,
       androidNotificationIcon: 'drawable/ic_launcher',
