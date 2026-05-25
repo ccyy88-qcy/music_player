@@ -306,6 +306,7 @@ class AggregateSource extends MusicSource {
   AggregateSource(this._srcs) : _srcMap = {for (final s in _srcs) s.key: s};
 
   @override String get name => _srcs.map((s) => s.name).join('+');
+  @override String get key => name;
 
   @override Future<List<OnlineSong>> search(String keyword, {int page = 1, int limit = 20}) async {
     // 并查所有源，合并去重
