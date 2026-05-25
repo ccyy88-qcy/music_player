@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
@@ -5,30 +6,51 @@ import 'services/audio_handler.dart';
 import 'screens/home_screen.dart';
 
 late AudioPlayerHandler audioHandler;
+const _batteryChannel = MethodChannel('com.alee.music_player/battery');
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 1. 初始化前台服务框架
   FlutterForegroundTask.init(
     androidNotificationOptions: AndroidNotificationOptions(
       channelId: 'music_player_channel',
       channelName: '狸音乐播放',
-      channelDescription: '音乐播放后台服务',
+      channelDescription: '后台音乐播放服务',
       iconData: null,
     ),
     requestNotificationPermission: true,
   );
+
+  // 2. 请求忽略电池优化（静默失败不影响启动）
+  _requestBatteryOptimization();
+
+  // 3. 初始化音频引擎
   audioHandler = AudioPlayerHandler();
+
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(statusBarColor: Colors.transparent, statusBarIconBrightness: Brightness.light),
   );
-  _requestBatteryOptimization();
+
   runApp(const MusicPlayerApp());
 }
 
-/// 请求忽略电池优化（防止后台被杀）
-void _requestBatteryOptimization() {
-  const channel = MethodChannel('com.alee.music_player/battery');
-  channel.invokeMethod('requestIgnoreBatteryOptimizations');
+/// 通过原生 MethodChannel 请求忽略电池优化
+Future<void> _requestBatteryOptimization() async {
+  try {
+    // 先检查是否已忽略
+    final isIgnoring = await _batteryChannel
+        .invokeMethod<bool>('isIgnoringBatteryOptimizations')
+        .then((v) => v ?? true);
+    if (isIgnoring) return;
+
+    // 未忽略则弹出系统设置页
+    await _batteryChannel
+        .invokeMethod('requestIgnoreBatteryOptimizations')
+        .timeout(const Duration(seconds: 3));
+  } catch (_) {
+    // MethodChannel 未注册时静默忽略（首次安装或旧版本）
+  }
 }
 
 class MusicPlayerApp extends StatelessWidget {
