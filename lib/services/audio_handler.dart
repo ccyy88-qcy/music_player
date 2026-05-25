@@ -69,13 +69,8 @@ class AudioPlayerHandler {
   AudioSource _createAudioSource(Song song) {
     final path = song.filePath;
     if (path.startsWith('http://') || path.startsWith('https://')) {
-      return AudioSource.uri(Uri.parse(path), headers: {
-        'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-        'Referer': 'https://music.163.com/',
-        'Accept': '*/*',
-        'Accept-Encoding': 'identity',
-        'Connection': 'keep-alive',
-      });
+      // 直接播放网络URL（不需要headers，MP3地址可直接访问）
+      return AudioSource.uri(Uri.parse(path));
     }
     return AudioSource.file(path);
   }
