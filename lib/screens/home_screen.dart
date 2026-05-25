@@ -201,9 +201,14 @@ class _HomeScreenState extends State<HomeScreen>
 
   Widget _favList() {
     final favs = _store?.getFavorites() ?? {};
-    final list = <Song>[..._allSongs[MusicCategory.dj]?.where((s) => favs.contains(s.id)) ?? [], ..._allSongs[MusicCategory.pop]?.where((s) => favs.contains(s.id)) ?? []];
+    final djSongs = _allSongs[MusicCategory.dj]?.where((s) => favs.contains(s.id)) ?? [];
+    final popSongs = _allSongs[MusicCategory.pop]?.where((s) => favs.contains(s.id)) ?? [];
+    final list = <Song>[...djSongs, ...popSongs];
     if (list.isEmpty) return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.star_outline_rounded, size: 64, color: Colors.grey.shade600), const SizedBox(height: 12), const Text('还没有收藏歌曲', style: TextStyle(color: Colors.grey, fontSize: 16))]));
-    return Column(children: [Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), decoration: BoxDecoration(gradient: LinearGradient(colors: [Colors.amber.shade800, Colors.orange.shade700])), child: Row(children: [const Icon(Icons.star_rounded, color: Colors.white, size: 24), const SizedBox(width: 10), const Text('⭐ 我的收藏', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)), const Spacer(), Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.25), borderRadius: BorderRadius.circular(12)), child: Text('${list.length} 首', style: const TextStyle(color: Colors.white, fontSize: 13)))])), Expanded(child: ListView.builder(itemCount: list.length, itemBuilder: (_, i) => SongTile(song: list[i], isPlaying: _isPlaying(list[i]), isFavorite: true, onTap: () => _playList(list, startIndex: i), onFavorite: () => _toggleFav(list[i])))]);
+    return Column(children: [
+      Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), decoration: BoxDecoration(gradient: LinearGradient(colors: [Colors.amber.shade800, Colors.orange.shade700])), child: Row(children: [const Icon(Icons.star_rounded, color: Colors.white, size: 24), const SizedBox(width: 10), const Text('⭐ 我的收藏', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)), const Spacer(), Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.25), borderRadius: BorderRadius.circular(12)), child: Text('${list.length} 首', style: const TextStyle(color: Colors.white, fontSize: 13)))])),
+      Expanded(child: ListView.builder(itemCount: list.length, itemBuilder: (_, i) => SongTile(song: list[i], isPlaying: _isPlaying(list[i]), isFavorite: true, onTap: () => _playList(list, startIndex: i), onFavorite: () => _toggleFav(list[i])))),
+    ]);
   }
 
   bool _isPlaying(Song s) { final cs = audioHandler.currentSong; return cs != null && cs.filePath == s.filePath; }
