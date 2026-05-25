@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../models/song.dart';
 import 'storage_manager.dart';
@@ -8,7 +9,14 @@ class OnlineSong {
   final String id, title, artist, album, source;
   final String? coverUrl;
   final int? duration;
-  const OnlineSong({required this.id, required this.title, required this.artist, this.album = '', this.coverUrl, this.source = '', this.duration});
+  final int fee; // 0=免费, 1=会员, 4=付费, 8=VIP
+
+  const OnlineSong({
+    required this.id, required this.title, required this.artist,
+    this.album = '', this.coverUrl, this.source = '', this.duration,
+    this.fee = 0,
+  });
+
   factory OnlineSong.fromJson(Map<String, dynamic> json, {String source = ''}) {
     return OnlineSong(
       id: (json['id'] ?? json['songid'] ?? '').toString(),
@@ -18,7 +26,28 @@ class OnlineSong {
       coverUrl: json['cover'] ?? json['pic'],
       source: source,
       duration: int.tryParse((json['duration'] ?? '0').toString()),
+      fee: json['fee'] as int? ?? 0,
     );
+  }
+
+  String get feeLabel {
+    switch (fee) {
+      case 0: return '免费';
+      case 1: return '会员';
+      case 4: return '付费';
+      case 8: return 'VIP';
+      default: return '';
+    }
+  }
+
+  Color get feeColor {
+    switch (fee) {
+      case 0: return Colors.green;
+      case 1: return Colors.orange;
+      case 4: return Colors.red;
+      case 8: return Colors.purple;
+      default: return Colors.grey;
+    }
   }
 }
 
@@ -38,19 +67,58 @@ Map<String, String> _h() => {
 class NeteaseSource extends MusicSource {
   @override String get name => '网易云';
 
-  @override Future<List<OnlineSong>> search(String keyword, {int page = 1, int limit = 20}) async {
-    final url = 'https://music.163.com/api/search/get?s=${Uri.encodeComponent(keyword)}&type=1&limit=$limit&offset=${(page - 1) * limit}';
+  @override Future<List<OnlineSong>> search(String keyword, {int page = 1, limit = 20}) async {
+    // 如果关键词不包含歌手名，尝试加上常见歌手名过滤翻唱
+    String searchKey = keyword;
+    // 搜索时排除明显的翻唱关键词
+    final coverKeywords = ['钢琴版', '钢琴曲', 'Cover', 'cover', '翻唱', '翻弹', '改编', '指弹', '纯音乐', '伴奏', 'DJ版', 'Remix'];
+    final hasCover = coverKeywords.any((kw) => keyword.contains(kw));
+    if (!hasCover) {
+      // 在搜索词后面加上过滤条件
+      searchKey = '$keyword -钢琴 -翻唱 -Cover -cover -改编 -翻弹 -指弹 -纯音乐 -伴奏';
+    }
+    
+    final url = 'https://music.163.com/api/search/get?s=${Uri.encodeComponent(searchKey)}&type=1&limit=$limit&offset=${(page - 1) * limit}';
     final resp = await http.get(Uri.parse(url), headers: _h()).timeout(const Duration(seconds: 10));
     if (resp.statusCode != 200) return [];
     try {
       final d = jsonDecode(resp.body);
       final songs = d['result']?['songs'] as List?;
       if (songs == null || songs.isEmpty) return [];
-      return songs.map((s) {
+      
+      final results = <OnlineSong>[];
+      for (final s in songs) {
         final artists = s['artists'] as List?;
         final album = s['album'] as Map?;
-        return OnlineSong(id: s['id'].toString(), title: s['name'] ?? '', artist: artists?.map((a) => a['name'] ?? '').join('/') ?? '', album: album?['name'] ?? '', coverUrl: album?['picUrl'], source: 'netease', duration: s['duration']);
-      }).toList();
+        final fee = s.get('fee', 0);
+        final name = s['name'] ?? '';
+        final artistStr = artists?.map((a) => a['name'] ?? '').join('/') ?? '';
+        
+        // 跳过VIP专享歌曲（fee=8）
+        if (fee == 8) continue;
+        
+        // 跳过明显的翻唱
+        final isCover = coverKeywords.any((kw) => name.contains(kw));
+        if (isCover) continue;
+        
+        results.add(OnlineSong(
+          id: s['id'].toString(),
+          title: name,
+          artist: artistStr,
+          album: album?['name'] ?? '',
+          coverUrl: album?['picUrl'],
+          source: 'netease',
+          duration: s['duration'],
+        ));
+      }
+      
+      // 排序：优先免费歌曲，然后按时长排序（长的更可能是完整版）
+      results.sort((a, b) {
+        // 优先时长长的（完整版通常比试听长）
+        return (b.duration ?? 0).compareTo(a.duration ?? 0);
+      });
+      
+      return results;
     } catch (_) { return []; }
   }
 
