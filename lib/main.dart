@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'services/audio_handler.dart';
 import 'screens/home_screen.dart';
 
@@ -7,6 +8,15 @@ late AudioPlayerHandler audioHandler;
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  FlutterForegroundTask.init(
+    androidNotificationOptions: AndroidNotificationOptions(
+      channelId: 'music_player_channel',
+      channelName: '狸音乐播放',
+      channelDescription: '音乐播放后台服务',
+      iconData: null,
+    ),
+    requestNotificationPermission: true,
+  );
   audioHandler = AudioPlayerHandler();
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(statusBarColor: Colors.transparent, statusBarIconBrightness: Brightness.light),

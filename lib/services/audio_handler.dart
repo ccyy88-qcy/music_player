@@ -1,6 +1,6 @@
 import 'dart:async';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
 import '../models/song.dart';
 import 'lyric_parser.dart';
 
@@ -19,7 +19,6 @@ class AudioPlayerHandler {
   PlayMode _playMode = PlayMode.repeatAll;
   EqPreset _eqPreset = EqPreset.flat;
   double _speed = 1.0;
-  bool _wakelockEnabled = false;
 
   AudioPlayer get player => _player;
   int get currentIndex => _currentIndex;
@@ -38,19 +37,42 @@ class AudioPlayerHandler {
       if (state.processingState == ProcessingState.completed) {
         if (_player.hasNext) { _currentIndex++; }
         else if (_playMode == PlayMode.repeatAll) { _currentIndex = 0; _player.seek(Duration.zero, index: 0); return; }
-        else { _currentIndex = -1; _disableWakelock(); }
+        else { _currentIndex = -1; _stopForeground(); }
       }
     });
     _player.playingStream.listen((playing) {
-      if (playing) { _enableWakelock(); } else { _disableWakelock(); }
+      if (playing) { _startForeground(); } else { _updateForeground(); }
     });
   }
 
-  void _enableWakelock() {
-    if (!_wakelockEnabled) { WakelockPlus.enable(); _wakelockEnabled = true; }
+  /// 启动前台服务（通知栏保活）
+  Future<void> _startForeground() async {
+    if (!await FlutterForegroundTask.isRunningService) {
+      await FlutterForegroundTask.startService(
+        notificationTitle: '🦊 狸音乐',
+        notificationText: currentSong?.title ?? '正在播放',
+        callback: _foregroundCallback,
+      );
+    } else {
+      _updateForeground();
+    }
   }
-  void _disableWakelock() {
-    if (_wakelockEnabled) { WakelockPlus.disable(); _wakelockEnabled = false; }
+
+  void _updateForeground() {
+    final song = currentSong;
+    FlutterForegroundTask.updateService(
+      notificationTitle: '🦊 狸音乐',
+      notificationText: song != null ? '${song.title}${_player.playing ? " ▶" : " ⏸"}' : '已暂停',
+    );
+  }
+
+  void _stopForeground() {
+    FlutterForegroundTask.stopService();
+  }
+
+  @pragma('vm:entry-point')
+  static void _foregroundCallback() {
+    FlutterForegroundTask.setTaskHandler(ForegroundTaskHandler());
   }
 
   Future<void> loadSongList(List<Song> songs, {int startIndex = 0}) async {
@@ -60,7 +82,7 @@ class AudioPlayerHandler {
       initialIndex: startIndex,
     );
     _applyPlayMode(); _player.setSpeed(_speed); _player.play();
-    _loadLyrics(); _enableWakelock();
+    _loadLyrics(); _startForeground();
   }
 
   void togglePlay() {
@@ -68,16 +90,16 @@ class AudioPlayerHandler {
   }
 
   Future<void> skipToNext() async {
-    if (_player.hasNext) { _currentIndex++; await _player.seekToNext(); _loadLyrics(); }
+    if (_player.hasNext) { _currentIndex++; await _player.seekToNext(); _loadLyrics(); _updateForeground(); }
   }
 
   Future<void> skipToPrevious() async {
-    if (_player.hasPrevious) { _currentIndex--; await _player.seekToPrevious(); _loadLyrics(); }
+    if (_player.hasPrevious) { _currentIndex--; await _player.seekToPrevious(); _loadLyrics(); _updateForeground(); }
     else { await _player.seek(Duration.zero); }
   }
 
   Future<void> skipToIndex(int i) async {
-    if (i >= 0 && i < _songQueue.length) { _currentIndex = i; await _player.seek(Duration.zero, index: i); _player.play(); _loadLyrics(); }
+    if (i >= 0 && i < _songQueue.length) { _currentIndex = i; await _player.seek(Duration.zero, index: i); _player.play(); _loadLyrics(); _updateForeground(); }
   }
 
   Future<void> seek(Duration p) async => _player.seek(p);
@@ -116,5 +138,11 @@ class AudioPlayerHandler {
   void updateLyricPosition(Duration p) => _lyricIndex = LyricParser.findCurrentIndex(_lyrics, p);
   void setOnlineLyrics(List<LyricLine> l) { _lyrics = l; _lyricIndex = -1; }
 
-  void dispose() { _sleepTimer?.cancel(); _disableWakelock(); _player.dispose(); }
+  void dispose() { _sleepTimer?.cancel(); _stopForeground(); _player.dispose(); }
+}
+
+class ForegroundTaskHandler extends TaskHandler {
+  @override Future<void> onStart(DateTime timestamp, TaskStarter starter) async {}
+  @override Future<void> onRepeatEvent(DateTime timestamp) async {}
+  @override Future<void> onDestroy(DateTime timestamp) async {}
 }

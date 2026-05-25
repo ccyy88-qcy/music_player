@@ -61,7 +61,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
         if (_results.isEmpty && !loadMore) _error = '未找到相关歌曲';
       });
     } catch (e) {
-      setState(() { _searching = false; _loadingMore = false; _error = '搜索失败: $e'; });
+      setState(() { _searching = false; _loadingMore = false; _error = '搜索失败: 请检查网络连接，或在设置中添加可用音乐源'; });
     }
   }
 

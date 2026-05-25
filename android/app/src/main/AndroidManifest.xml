@@ -8,6 +8,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
     <application
         android:label="狸音乐"
@@ -15,6 +16,7 @@
         android:icon="@drawable/ic_launcher"
         android:allowBackup="true"
         android:usesCleartextTraffic="true"
+        android:networkSecurityConfig="@xml/network_security_config"
         tools:targetApi="34">
 
         <activity
@@ -35,5 +37,10 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2"/>
+
+        <service
+            android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="false"/>
     </application>
 </manifest>
