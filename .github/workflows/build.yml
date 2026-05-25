@@ -31,6 +31,8 @@ jobs:
           # Copy our Dart code into the fresh project
           cp -r lib/* tmp_project/lib/
           cp pubspec.yaml tmp_project/
+          # Copy assets
+          cp -r assets tmp_project/
           cp analysis_options.yaml tmp_project/
           # Copy our Android manifest
           cp android/app/src/main/AndroidManifest.xml tmp_project/android/app/src/main/
