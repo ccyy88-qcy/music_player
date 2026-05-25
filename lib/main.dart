@@ -18,6 +18,7 @@ Future<void> main() async {
       channelName: '狸音乐播放',
       channelDescription: '后台音乐播放服务',
     ),
+    iosNotificationOptions: const IOSNotificationOptions(),
   );
 
   // 2. 请求忽略电池优化（静默失败不影响启动）
