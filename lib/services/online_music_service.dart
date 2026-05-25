@@ -295,11 +295,49 @@ class CustomApiSource extends MusicSource {
   }
 }
 
+/// ========== Huibq 第三方聚合API（洛雪音乐同款） ==========
+class HuibqSource extends MusicSource {
+  static const _apiUrl = 'https://lxmusicapi.onrender.com';
+  static const _apiKey = 'share-v3';
+
+  @override String get name => 'Huibq';
+  @override String get key => 'huibq';
+
+  @override Future<List<OnlineSong>> search(String keyword, {int page = 1, limit = 20}) async {
+    return []; // 搜索由其他源处理，Huibq只提供播放地址
+  }
+
+  @override Future<String?> getPlayUrl(OnlineSong song) async {
+    // 将source映射到Huibq支持的格式
+    final sourceMap = {'netease': 'wy', 'qq': 'tx', 'kugou': 'kw'};
+    final src = sourceMap[song.source] ?? 'tx';
+    try {
+      final url = '$_apiUrl/url/$src/${song.id}/320k';
+      final resp = await http.get(Uri.parse(url), headers: {
+        'User-Agent': 'lx-music-mobile/2.0.0',
+        'X-Request-Key': _apiKey,
+      }).timeout(const Duration(seconds: 10));
+      if (resp.statusCode == 200) {
+        final d = jsonDecode(resp.body);
+        if (d['code'] == 0 && d['url'] != null) {
+          return d['url'].toString();
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  @override Future<String?> getLyric(OnlineSong song) async {
+    // 使用网易云获取歌词
+    return null;
+  }
+}
+
 /// ========== 聚合多源 ==========
 Future<MusicSource> getMusicSourceAsync() async {
   final store = await storage;
   final custom = store.getMusicSources();
-  final srcs = <MusicSource>[NeteaseSource(), QQSource(), KugouSource()];
+  final srcs = <MusicSource>[NeteaseSource(), QQSource(), KugouSource(), HuibqSource()];
   for (final s in custom) { srcs.add(CustomApiSource(name: s['name'] ?? '自定义', searchUrl: '${s['url']}/search?key={keyword}&page={page}&limit={limit}', playUrl: '${s['url']}/url?id={id}', lyricUrl: '${s['url']}/lyric?id={id}')); }
   return AggregateSource(srcs);
 }
@@ -331,26 +369,33 @@ class AggregateSource extends MusicSource {
 
   /// 根据song.source路由到正确的源获取播放地址
   @override Future<String?> getPlayUrl(OnlineSong song) async {
-    // 直接路由
+    // 1. 先试Huibq（第三方聚合，成功率最高）
+    final huibq = _srcMap['huibq'];
+    if (huibq != null) {
+      try { final u = await huibq.getPlayUrl(song); if (u != null && u.startsWith('http')) return u; } catch (_) {}
+    }
+    // 2. 直接路由到歌曲来源
     final known = _srcMap[song.source];
     if (known != null) {
-      try {
-        final u = await known.getPlayUrl(song);
-        if (u != null && u.startsWith('http')) return u;
-      } catch (_) {}
+      try { final u = await known.getPlayUrl(song); if (u != null && u.startsWith('http')) return u; } catch (_) {}
     }
-    // 降级：遍历所有源
+    // 3. 降级：遍历其他源
     for (final s in _srcs) {
       try { final u = await s.getPlayUrl(song); if (u != null && u.startsWith('http')) return u; } catch (_) {}
     }
-    // VIP歌曲 -> 跨源搜索同名歌曲来播（网易云VIP → QQ/酷狗找同名）
+    // 4. VIP歌曲 -> 跨源搜索同名歌曲来播
     try {
-      final otherSources = _srcs.where((s) => s.key != song.source).toList();
+      final otherSources = _srcs.where((s) => s.key != song.source && s.key != 'huibq').toList();
       for (final s in otherSources) {
         final results = await s.search(song.title, limit: 3);
         for (final result in results) {
           if (result.title.contains(song.title.substring(0, song.title.length > 4 ? 4 : song.title.length))) {
             try {
+              // 再用Huibq播
+              if (huibq != null) {
+                final u = await huibq.getPlayUrl(result);
+                if (u != null && u.startsWith('http')) return u;
+              }
               final u = await s.getPlayUrl(result);
               if (u != null && u.startsWith('http')) return u;
             } catch (_) {}
