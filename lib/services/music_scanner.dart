@@ -4,50 +4,60 @@ import 'package:permission_handler/permission_handler.dart';
 import '../models/song.dart';
 import 'storage_manager.dart';
 
-/// 全格式音乐扫描器 — 支持全盘/自定义目录/增量扫描
+/// 扫描进度回调
+typedef ScanProgressCallback = void Function(int scanned, int current, String dir);
+
 class MusicScanner {
-  /// 请求权限
+  /// 请求权限（Android 13+ 用 READ_MEDIA_AUDIO，老版本用存储权限）
   static Future<bool> requestPermission() async {
+    // Android 13+ (API 33+)
     final audio = await Permission.audio.request();
     if (audio.isGranted) return true;
+    // 老版本
     final storage = await Permission.storage.request();
     if (storage.isGranted) return true;
+    // 管理所有文件（Android 11+）
     final manage = await Permission.manageExternalStorage.request();
     return manage.isGranted;
   }
 
-  /// 扫描所有音乐 — 根据设置选择模式
+  /// 检查权限是否已授予（不弹框）
+  static Future<bool> hasPermission() async {
+    if (await Permission.audio.isGranted) return true;
+    if (await Permission.storage.isGranted) return true;
+    if (await Permission.manageExternalStorage.isGranted) return true;
+    return false;
+  }
+
+  /// 打开系统设置页让用户手动授权
+  static Future<void> openSettings() async {
+    await openAppSettings();
+  }
+
+  /// 扫描所有音乐
   static Future<Map<MusicCategory, List<Song>>> scanAll({
     bool forceFullScan = false,
+    ScanProgressCallback? onProgress,
   }) async {
     final store = await StorageManager.instance;
 
-    // 增量扫描：如果有缓存且非强制全扫，只检查新文件
+    // 增量扫描
     if (!forceFullScan && store.lastScanTime > 0) {
       final cached = store.loadSongCache();
       if (cached.isNotEmpty) {
-        return _incrementalScan(cached, await _getScanDirs());
+        return _incrementalScan(cached, await _getScanDirs(), onProgress);
       }
     }
 
-    return _fullScan(await _getScanDirs());
+    return _fullScan(await _getScanDirs(), onProgress);
   }
 
-  /// 获取要扫描的目录
   static Future<List<String>> _getScanDirs() async {
     final store = await StorageManager.instance;
-    final mode = store.scanMode;
-
-    if (mode == 'full') {
-      // 全盘扫描：遍历 /storage/emulated/0 下的所有一级目录（跳过系统目录）
-      return _getFullScanDirs();
-    }
-
-    // 快速模式：预设 + 自定义目录
+    if (store.scanMode == 'full') return _getFullScanDirs();
     return store.getScanDirs();
   }
 
-  /// 获取全盘扫描目录列表
   static List<String> _getFullScanDirs() {
     const root = '/storage/emulated/0';
     final dirs = <String>[root];
@@ -67,47 +77,60 @@ class MusicScanner {
     return dirs;
   }
 
-  /// 全量扫描（后台 isolate）
+  /// 全量扫描
   static Future<Map<MusicCategory, List<Song>>> _fullScan(
-      List<String> dirs) async {
-    final allSongs = <Song>[];
+      List<String> dirs, ScanProgressCallback? onProgress) async {
+    final allSongs = <String, Song>{}; // 用 Map 去重（key = filePath）
+    int scanned = 0;
 
-    for (final dir in dirs) {
-      final d = Directory(dir);
-      if (!d.existsSync()) continue;
-      allSongs.addAll(await _scanDirAsync(d, maxDepth: 4));
-    }
-
-    return _categorize(allSongs);
-  }
-
-  /// 增量扫描：基于缓存，只检查新增/修改的文件
-  static Future<Map<MusicCategory, List<Song>>> _incrementalScan(
-    Map<String, Song> cached,
-    List<String> dirs,
-  ) async {
-    // 先扫描当前文件
-    final current = <String, Song>{};
     for (final dir in dirs) {
       final d = Directory(dir);
       if (!d.existsSync()) continue;
       final songs = await _scanDirAsync(d, maxDepth: 4);
       for (final s in songs) {
-        current[s.id] = s;
-      }
-    }
-
-    // 增量合并：保留缓存中的收藏/播放计数
-    for (final entry in current.entries) {
-      final cachedSong = cached[entry.key];
-      if (cachedSong != null) {
-        entry.value.isFavorite = cachedSong.isFavorite;
-        entry.value.playCount = cachedSong.playCount;
-        entry.value.lastPlayed = cachedSong.lastPlayed;
+        // 去重：同一路径只保留一次
+        if (!allSongs.containsKey(s.filePath)) {
+          allSongs[s.filePath] = s;
+          scanned++;
+          onProgress?.call(scanned, songs.length, dir);
+        }
       }
     }
 
     // 保存缓存
+    final store = await StorageManager.instance;
+    await store.saveSongCache(allSongs);
+    await store.setLastScanTime(DateTime.now().millisecondsSinceEpoch);
+
+    return _categorize(allSongs.values.toList());
+  }
+
+  /// 增量扫描
+  static Future<Map<MusicCategory, List<Song>>> _incrementalScan(
+      Map<String, Song> cached, List<String> dirs, ScanProgressCallback? onProgress) async {
+    final current = <String, Song>{};
+    int scanned = 0;
+
+    for (final dir in dirs) {
+      final d = Directory(dir);
+      if (!d.existsSync()) continue;
+      final songs = await _scanDirAsync(d, maxDepth: 4);
+      for (final s in songs) {
+        if (!current.containsKey(s.filePath)) {
+          current[s.filePath] = s;
+          // 保留缓存中的收藏/播放计数
+          final cachedSong = cached[s.filePath];
+          if (cachedSong != null) {
+            s.isFavorite = cachedSong.isFavorite;
+            s.playCount = cachedSong.playCount;
+            s.lastPlayed = cachedSong.lastPlayed;
+          }
+          scanned++;
+          onProgress?.call(scanned, songs.length, dir);
+        }
+      }
+    }
+
     final store = await StorageManager.instance;
     await store.saveSongCache(current);
     await store.setLastScanTime(DateTime.now().millisecondsSinceEpoch);
@@ -115,24 +138,18 @@ class MusicScanner {
     return _categorize(current.values.toList());
   }
 
-  /// 异步扫描目录（递归）
-  static Future<List<Song>> _scanDirAsync(Directory dir,
-      {int maxDepth = 3}) async {
+  static Future<List<Song>> _scanDirAsync(Directory dir, {int maxDepth = 3}) async {
     return await Isolate.run(() => _scanDirSync(dir.path, maxDepth));
   }
 
-  /// 同步扫描（在 isolate 中运行）
   static List<Song> _scanDirSync(String dirPath, int depth) {
     final songs = <Song>[];
     if (depth <= 0) return songs;
-
     final dir = Directory(dirPath);
     List<FileSystemEntity> entities;
     try {
       entities = dir.listSync(recursive: false, followLinks: false);
-    } catch (_) {
-      return songs;
-    }
+    } catch (_) { return songs; }
 
     for (final entity in entities) {
       if (entity is File) {
@@ -144,20 +161,12 @@ class MusicScanner {
             try {
               final stat = entity.statSync();
               songs.add(Song(
-                title: title,
-                artist: '',
-                filePath: entity.path,
+                title: title, artist: '', filePath: entity.path,
                 category: Song.classifySong(dirPath, name),
-                fileSize: stat.size,
-                lastModified: stat.modified.millisecondsSinceEpoch,
+                fileSize: stat.size, lastModified: stat.modified.millisecondsSinceEpoch,
               ));
             } catch (_) {
-              songs.add(Song(
-                title: title,
-                artist: '',
-                filePath: entity.path,
-                category: Song.classifySong(dirPath, name),
-              ));
+              songs.add(Song(title: title, artist: '', filePath: entity.path, category: Song.classifySong(dirPath, name)));
             }
           }
         }
@@ -171,29 +180,22 @@ class MusicScanner {
     return songs;
   }
 
-  /// 分类排序
   static Map<MusicCategory, List<Song>> _categorize(List<Song> songs) {
     final dj = <Song>[];
     final pop = <Song>[];
-    for (final s in songs) {
-      (s.category == MusicCategory.dj ? dj : pop).add(s);
-    }
+    for (final s in songs) (s.category == MusicCategory.dj ? dj : pop).add(s);
     dj.sort((a, b) => a.title.compareTo(b.title));
     pop.sort((a, b) => a.title.compareTo(b.title));
     return {MusicCategory.dj: dj, MusicCategory.pop: pop};
   }
 
-  /// 获取单个目录的歌曲数（预览用）
   static int countSongsInDir(String dirPath) {
     final dir = Directory(dirPath);
     if (!dir.existsSync()) return 0;
     var count = 0;
     try {
       for (final entity in dir.listSync(recursive: true)) {
-        if (entity is File) {
-          final ext = entity.uri.pathSegments.last.toLowerCase();
-          if (audioExtensions.any((e) => ext.endsWith(e))) count++;
-        }
+        if (entity is File && audioExtensions.any((e) => entity.uri.pathSegments.last.toLowerCase().endsWith(e))) count++;
       }
     } catch (_) {}
     return count;

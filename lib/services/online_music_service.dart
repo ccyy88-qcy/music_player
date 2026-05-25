@@ -88,7 +88,8 @@ class NeteaseSource extends MusicSource {
         }
       } catch (_) {}
     }
-    return null;
+    // 降级：使用 outer/url（会302跳转到真实地址）
+    return 'https://music.163.com/song/media/outer/url?id=${song.id}.mp3';
   }
 
   @override Future<String?> getLyric(OnlineSong song) async {
