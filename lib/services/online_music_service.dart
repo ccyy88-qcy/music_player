@@ -90,8 +90,7 @@ class NeteaseSource extends MusicSource {
         final artistStr = ((s['artists'] as List?)?.map((a) => a['name'] ?? '').join('/') ?? '');
         final album = s['album'] as Map?;
         
-        // 过滤VIP专享（fee=8）— 这些播放地址通常是30秒试听
-        if (fee >= 8) continue;
+        // 不按fee过滤VIP，播放时再尝试获取地址（部分会员歌CDN不检查权限）
         
         // 过滤明显翻唱
         bool isCover = coverKeywords.any((kw) => name.contains(kw));
@@ -324,7 +323,7 @@ class AggregateSource extends MusicSource {
 
   /// 根据song.source路由到正确的源获取播放地址
   @override Future<String?> getPlayUrl(OnlineSong song) async {
-    // 已知源名直接路由
+    // 直接路由
     final known = _srcMap[song.source];
     if (known != null) {
       try {
@@ -336,6 +335,21 @@ class AggregateSource extends MusicSource {
     for (final s in _srcs) {
       try { final u = await s.getPlayUrl(song); if (u != null && u.startsWith('http')) return u; } catch (_) {}
     }
+    // VIP歌曲 -> 跨源搜索同名歌曲来播（网易云VIP → QQ/酷狗找同名）
+    try {
+      final otherSources = _srcs.where((s) => s.key != song.source).toList();
+      for (final s in otherSources) {
+        final results = await s.search(song.title, limit: 3);
+        for (final result in results) {
+          if (result.title.contains(song.title.substring(0, song.title.length > 4 ? 4 : song.title.length))) {
+            try {
+              final u = await s.getPlayUrl(result);
+              if (u != null && u.startsWith('http')) return u;
+            } catch (_) {}
+          }
+        }
+      }
+    } catch (_) {}
     return null;
   }
 
