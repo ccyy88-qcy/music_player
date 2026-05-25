@@ -70,14 +70,10 @@ class NeteaseSource extends MusicSource {
   @override Future<List<OnlineSong>> search(String keyword, {int page = 1, limit = 20}) async {
     final results = <OnlineSong>[];
     
-    // 搜索时排除明显的翻唱关键词
+    // 排除关键词对网易云搜索API无效（返回0结果），全靠搜索结果后过滤
     final coverKeywords = ['钢琴版', '钢琴曲', 'Cover', 'cover', '翻唱', '翻弹', '改编', '指弹', '纯音乐', '伴奏', 'DJ版', 'Remix', 'Live'];
-    String searchKey = keyword;
-    if (!coverKeywords.any((kw) => keyword.contains(kw))) {
-      searchKey = '$keyword -钢琴 -翻唱 -Cover -改编 -指弹 -纯音乐 -伴奏 -Live';
-    }
     
-    final url = 'https://music.163.com/api/search/get?s=${Uri.encodeComponent(searchKey)}&type=1&limit=$limit&offset=${(page - 1) * limit}';
+    final url = 'https://music.163.com/api/search/get?s=${Uri.encodeComponent(keyword)}&type=1&limit=$limit&offset=${(page - 1) * limit}';
     final resp = await http.get(Uri.parse(url), headers: _h()).timeout(const Duration(seconds: 10));
     if (resp.statusCode != 200) return [];
     
