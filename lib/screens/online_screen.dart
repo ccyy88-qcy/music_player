@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 import '../models/song.dart';
 import '../services/online_music_service.dart';
 import '../services/audio_handler.dart';
@@ -74,9 +76,56 @@ class _OnlineScreenState extends State<OnlineScreen> {
       setState(() => _playingId = null);
       return;
     }
+
+    // 缓存到本地再播放（just_audio的网络URL在Android上不稳定）
+    String playPath = playUrl;
+    if (playUrl.startsWith('http://') || playUrl.startsWith('https://')) {
+      try {
+        final cacheDir = await getTemporaryDirectory();
+        final safeId = song.id.replaceAll(RegExp(r'[^\w\-]'), '_');
+        final cacheFile = File('${cacheDir.path}/online_$safeId.mp3');
+
+        if (!await cacheFile.exists() || await cacheFile.length() < 1024) {
+          final client = http.Client();
+          try {
+            var url = playUrl;
+            for (int i = 0; i < 5; i++) {
+              final req = http.Request('GET', Uri.parse(url));
+              req.headers.addAll({
+                'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36',
+                'Referer': 'https://music.163.com/',
+                'Accept': '*/*',
+              });
+              req.followRedirects = false;
+              final resp = await client.send(req).timeout(const Duration(seconds: 15));
+              if (resp.statusCode == 302 || resp.statusCode == 301) {
+                url = resp.headers['location'] ?? '';
+                if (url.isEmpty) break;
+                continue;
+              }
+              if (resp.statusCode == 200) {
+                final bytes = await resp.stream.toBytes();
+                if (bytes.length >= 1024) {
+                  await cacheFile.writeAsBytes(bytes);
+                  playPath = cacheFile.path;
+                }
+              }
+              break;
+            }
+          } finally {
+            client.close();
+          }
+        } else {
+          playPath = cacheFile.path;
+        }
+      } catch (_) {
+        // 缓存失败fallback到直接网络播放
+      }
+    }
+
     String? lrcText;
     try { lrcText = await _source!.getLyric(song); } catch (_) {}
-    final tempSong = Song(title: song.title, artist: song.artist, filePath: playUrl, category: MusicCategory.pop);
+    final tempSong = Song(title: song.title, artist: song.artist, filePath: playPath, category: MusicCategory.pop);
     audioHandler.loadSongList([tempSong], startIndex: 0);
     if (lrcText != null && lrcText.isNotEmpty) {
       audioHandler.setOnlineLyrics(LyricParser.parse(lrcText));
