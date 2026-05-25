@@ -1,5 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
+import 'dart:typed_data';
+import 'package:crypto/crypto.dart';
+import 'package:encrypt/encrypt.dart' as encrypt;
 import 'package:http/http.dart' as http;
 import '../models/song.dart';
 import 'storage_manager.dart';
@@ -40,7 +44,7 @@ Map<String, String> _h() => {
   'X-Requested-With': 'XMLHttpRequest',
 };
 
-/// ========== 网易云音乐 API ==========
+/// ========== 网易云音乐 API（含加密）==========
 class NeteaseSource extends MusicSource {
   @override String get name => '网易云';
 
@@ -70,25 +74,37 @@ class NeteaseSource extends MusicSource {
   }
 
   @override Future<String?> getPlayUrl(OnlineSong song, {String quality = '320'}) async {
-    // 尝试多个接口获取播放地址
-    final apis = [
-      'https://music.163.com/api/song/enhance/player/url?id=${song.id}&ids=%5B${song.id}%5D&br=${quality}000',
-      'https://music.163.com/api/song/enhance/player/url/v1?id=${song.id}&ids=%5B${song.id}%5D&level=standard&encodeType=mp3',
-    ];
-    for (final url in apis) {
-      try {
-        final resp = await http.get(Uri.parse(url), headers: _h()).timeout(const Duration(seconds: 8));
-        if (resp.statusCode == 200) {
-          final d = jsonDecode(resp.body);
-          final data = d['data'] as List?;
-          if (data != null && data.isNotEmpty) {
-            final urlStr = data[0]['url'];
+    // 使用加密接口获取播放地址
+    final br = '${quality}000';
+    final data = jsonEncode({
+      'ids': [int.tryParse(song.id) ?? song.id],
+      'br': int.tryParse(br) ?? 320000,
+      'csrf_token': '',
+    });
+
+    final encrypted = _encryptRequest(data);
+    if (encrypted == null) return null;
+
+    final url = 'https://music.163.com/weapi/song/enhance/player/url';
+    try {
+      final resp = await http.post(Uri.parse(url), headers: _h(), body: {
+        'params': encrypted['encText'],
+        'encSecKey': encrypted['encSecKey'],
+      }).timeout(const Duration(seconds: 10));
+
+      if (resp.statusCode == 200) {
+        final d = jsonDecode(resp.body);
+        if (d['code'] == 200) {
+          final dataList = d['data'] as List?;
+          if (dataList != null && dataList.isNotEmpty) {
+            final urlStr = dataList[0]['url'];
             if (urlStr != null && urlStr.toString().startsWith('http')) return urlStr.toString();
           }
         }
-      } catch (_) {}
-    }
-    // 降级：使用 outer/url（会302跳转到真实地址）
+      }
+    } catch (_) {}
+
+    // 降级：尝试 outer/url
     return 'https://music.163.com/song/media/outer/url?id=${song.id}.mp3';
   }
 
@@ -103,13 +119,67 @@ class NeteaseSource extends MusicSource {
     } catch (_) {}
     return null;
   }
+
+  /// 网易云 weapi 加密
+  Map<String, String>? _encryptRequest(String text) {
+    try {
+      const modulus = '00e0b509f6259df8642dbc35662901477df22677ec152b5ff68ace615bb7b725152b3ab17a876aea8a5aa76d2e417629ec4ee341f56135fccf695280104e0312ecbda92557c93870114af6c9d05c4f7f0c3685b7a46bee255932575cce10b424d813cfe4875d3e82047b97ddef52741d546b8e289dc6935b3ece0462db0a22b8e7';
+      const nonce = '0CoJUm6Qyw8W8jud';
+      const pubKey = '010001';
+
+      // 1. 生成随机16字节密钥
+      final secKey = _randomString(16);
+
+      // 2. AES-128-CBC 加密（第一次，用 nonce）
+      final encText1 = _aesEncrypt(text, nonce);
+      // 3. AES-128-CBC 加密（第二次，用 secKey）
+      final encText2 = _aesEncrypt(encText1, secKey);
+
+      // 4. RSA 加密 secKey
+      final encSecKey = _rsaEncrypt(secKey, pubKey, modulus);
+
+      return {'encText': encText2, 'encSecKey': encSecKey};
+    } catch (_) { return null; }
+  }
+
+  String _aesEncrypt(String text, String key) {
+    final keyBytes = utf8.encode(key);
+    final textBytes = utf8.encode(text);
+    // PKCS7 padding
+    final blockSize = 16;
+    final padLen = blockSize - (textBytes.length % blockSize);
+    final padded = List<int>.from(textBytes)..addAll(List.filled(padLen, padLen));
+
+    final encrypter = encrypt.Encrypter(encrypt.AES(encrypt.Key(keyBytes), mode: encrypt.AESMode.cbc, padding: null));
+    final iv = List<int>.filled(16, 0); // weapi 使用全0 IV
+    final encrypted = encrypter.encryptBytes(padded, iv: encrypt.IV(iv));
+    return base64.encode(encrypted.bytes);
+  }
+
+  String _rsaEncrypt(String text, String pubKey, String modulus) {
+    // 反转文本
+    final reversed = text.split('').reversed.join('');
+    // 转大整数
+    final textBigInt = BigInt.parse(utf8.encode(reversed).map((b) => b.toRadixString(16).padLeft(2, '0')).join(), radix: 16);
+    final keyBigInt = BigInt.parse(pubKey, radix: 16);
+    final modBigInt = BigInt.parse(modulus, radix: 16);
+    // RSA 加密: c = m^e mod n
+    final result = textBigInt.modPow(keyBigInt, modBigInt);
+    return result.toRadixString(16).padLeft(256, '0');
+  }
+
+  String _randomString(int length) {
+    const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    final rng = Random.secure();
+    return List.generate(length, (_) => chars[rng.nextInt(chars.length)]).join();
+  }
 }
 
 /// ========== QQ音乐 API ==========
 class QQSource extends MusicSource {
   @override String get name => 'QQ音乐';
 
-  @override Future<List<OnlineSong>> search(String keyword, {int page = 1, limit = 20}) async {
+  @override Future<List<OnlineSong>> search(String keyword, {int page = 1, int limit = 20}) async {
     final url = 'https://c.y.qq.com/soso/fcgi-bin/client_search_cp?format=json&w=${Uri.encodeComponent(keyword)}&p=$page&n=$limit&cr=1&g_tk=5381';
     final resp = await http.get(Uri.parse(url), headers: _h()).timeout(const Duration(seconds: 10));
     if (resp.statusCode != 200) return [];
@@ -136,7 +206,21 @@ class QQSource extends MusicSource {
   @override Future<String?> getPlayUrl(OnlineSong song, {String quality = '320'}) async {
     try {
       final guid = DateTime.now().millisecondsSinceEpoch % 1000000000;
-      final url = 'https://u.y.qq.com/cgi-bin/musicu.fcg?format=json&data=%7B%22req_0%22%3A%7B%22module%22%3A%22vkey.GetVkeyServer%22%2C%22method%22%3A%22CgiGetVkey%22%2C%22param%22%3A%7B%22guid%22%3A%22$guid%22%2C%22songmid%22%3A%5B%22${song.id}%22%5D%2C%22songtype%22%3A%5B0%5D%2C%22uin%22%3A%220%22%2C%22loginflag%22%3A1%2C%22platform%22%3A%2220%22%7D%7D%7D';
+      final data = jsonEncode({
+        'req_0': {
+          'module': 'vkey.GetVkeyServer',
+          'method': 'CgiGetVkey',
+          'param': {
+            'guid': guid.toString(),
+            'songmid': [song.id],
+            'songtype': [0],
+            'uin': '0',
+            'loginflag': 1,
+            'platform': '20',
+          }
+        }
+      });
+      final url = 'https://u.y.qq.com/cgi-bin/musicu.fcg?format=json&data=${Uri.encodeComponent(data)}';
       final resp = await http.get(Uri.parse(url), headers: _h()).timeout(const Duration(seconds: 8));
       if (resp.statusCode == 200) {
         final d = jsonDecode(resp.body);
@@ -167,7 +251,7 @@ class QQSource extends MusicSource {
 class KugouSource extends MusicSource {
   @override String get name => '酷狗';
 
-  @override Future<List<OnlineSong>> search(String keyword, {int page = 1, limit = 20}) async {
+  @override Future<List<OnlineSong>> search(String keyword, {int page = 1, int limit = 20}) async {
     final url = 'http://mobilecdn.kugou.com/api/v3/search/song?format=json&keyword=${Uri.encodeComponent(keyword)}&page=$page&pagesize=$limit';
     final resp = await http.get(Uri.parse(url), headers: _h()).timeout(const Duration(seconds: 10));
     if (resp.statusCode != 200) return [];
@@ -175,17 +259,15 @@ class KugouSource extends MusicSource {
       final d = jsonDecode(resp.body);
       final songs = d['data']?['info'] as List?;
       if (songs == null || songs.isEmpty) return [];
-      return songs.map((s) {
-        return OnlineSong(
-          id: s['hash']?.toString() ?? s['songid']?.toString() ?? '',
-          title: s['songname'] ?? '',
-          artist: s['singername'] ?? '',
-          album: s['album_name'] ?? '',
-          coverUrl: s['album_img']?.toString().replaceAll('{size}', '300'),
-          source: 'kugou',
-          duration: (s['duration'] as int?) != null ? (s['duration'] as int) * 1000 : null,
-        );
-      }).toList();
+      return songs.map((s) => OnlineSong(
+        id: s['hash']?.toString() ?? s['songid']?.toString() ?? '',
+        title: s['songname'] ?? '',
+        artist: s['singername'] ?? '',
+        album: s['album_name'] ?? '',
+        coverUrl: s['album_img']?.toString().replaceAll('{size}', '300'),
+        source: 'kugou',
+        duration: (s['duration'] as int?) != null ? (s['duration'] as int) * 1000 : null,
+      )).toList();
     } catch (_) { return []; }
   }
 
@@ -195,8 +277,11 @@ class KugouSource extends MusicSource {
       final resp = await http.get(Uri.parse(url), headers: _h()).timeout(const Duration(seconds: 8));
       if (resp.statusCode == 200) {
         final d = jsonDecode(resp.body);
-        final urlStr = d['url']?.toString();
-        if (urlStr != null && urlStr.startsWith('http')) return urlStr;
+        final urlList = d['url'] as List?;
+        if (urlList != null && urlList.isNotEmpty) {
+          final urlStr = urlList[0]?.toString();
+          if (urlStr != null && urlStr.startsWith('http')) return urlStr;
+        }
       }
     } catch (_) {}
     return null;
@@ -227,6 +312,7 @@ class KugouSource extends MusicSource {
   }
 }
 
+/// ========== 自定义 API 源 ==========
 class CustomApiSource extends MusicSource {
   final String _name, _searchUrl, _playUrl, _lyricUrl;
   CustomApiSource({required String name, required String searchUrl, required String playUrl, required String lyricUrl})
@@ -280,6 +366,13 @@ class AggregateSource extends MusicSource {
     return [];
   }
   @override Future<String?> getPlayUrl(OnlineSong song, {String quality = '320'}) async {
+    // 优先用歌曲来源的平台
+    for (final s in _srcs) {
+      if (s.name.contains(song.source) || song.source.contains(s.name)) {
+        try { final u = await s.getPlayUrl(song, quality: quality); if (u != null && u.startsWith('http')) return u; } catch (_) {}
+      }
+    }
+    // 降级：依次尝试所有平台
     for (final s in _srcs) { try { final u = await s.getPlayUrl(song, quality: quality); if (u != null && u.startsWith('http')) return u; } catch (_) {} }
     return null;
   }
@@ -296,9 +389,23 @@ class DownloadManager {
       final safe = '${song.title} - ${song.artist}'.replaceAll(RegExp(r'[/\\:*?"<>|]'), '_');
       final path = '$saveDir/$safe.mp3';
       if (File(path).existsSync()) return path;
-      final r = await http.get(Uri.parse(playUrl), headers: _h()).timeout(const Duration(minutes: 3));
+      final r = await http.get(Uri.parse(playUrl), headers: _h()).timeout(const Duration(minutes: 5));
       if (r.statusCode != 200) return null;
-      await File(path).writeAsBytes(r.bodyBytes); return path;
+      // 检查下载的是否是音频文件（不是HTML错误页面）
+      final contentType = r.headers['content-type'] ?? '';
+      final bodyBytes = r.bodyBytes;
+      if (bodyBytes.length < 1000) return null; // 太小的文件可能是错误页面
+      // 检查文件头（MP3: ID3 或 FF FB, FLAC: fLaC, AAC: FF F1）
+      if (bodyBytes.length > 4) {
+        final header = bodyBytes.sublist(0, 4);
+        final isAudio = (header[0] == 0x49 && header[1] == 0x44 && header[2] == 0x33) || // ID3
+            (header[0] == 0xFF && (header[1] == 0xFB || header[1] == 0xF3 || header[1] == 0xF2)) || // MP3
+            (header[0] == 0x66 && header[1] == 0x4C && header[2] == 0x61 && header[3] == 0x43) || // FLAC
+            contentType.contains('audio') || contentType.contains('octet-stream');
+        if (!isAudio) return null; // 不是音频文件
+      }
+      await File(path).writeAsBytes(bodyBytes);
+      return path;
     } catch (_) { return null; }
   }
 }

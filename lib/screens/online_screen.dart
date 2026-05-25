@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:io';
 import '../models/song.dart';
 import '../services/online_music_service.dart';
 import '../services/audio_handler.dart';
@@ -87,19 +88,50 @@ class _OnlineScreenState extends State<OnlineScreen> {
   Future<void> _download(OnlineSong song) async {
     if (_downloadingIds.contains(song.id)) return;
     setState(() => _downloadingIds.add(song.id));
+    
+    // 显示下载中提示
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Row(children: [
+          const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
+          const SizedBox(width: 12),
+          Text('正在下载: ${song.title}...'),
+        ]),
+        duration: const Duration(seconds: 30),
+      ));
+    }
+    
     final playUrl = await _source!.getPlayUrl(song);
     if (playUrl == null) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('获取下载地址失败'), backgroundColor: Colors.red));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('❌ 获取播放地址失败，该歌曲可能需要VIP'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 3),
+        ));
+      }
       setState(() => _downloadingIds.remove(song.id));
       return;
     }
+    
     final path = await DownloadManager.downloadSong(song, playUrl, '/storage/emulated/0/Music/xmp3');
     if (mounted) {
       setState(() => _downloadingIds.remove(song.id));
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(path != null ? '✅ 下载完成: ${song.title}' : '下载失败'),
-        backgroundColor: path != null ? Colors.green : Colors.red,
-      ));
+      if (path != null) {
+        final file = File(path);
+        final sizeStr = file.existsSync() ? '${(file.lengthSync() / 1024 / 1024).toStringAsFixed(1)}MB' : '';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('✅ 下载完成: ${song.title} ($sizeStr)'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 3),
+        ));
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('❌ 下载失败，可能该歌曲需要VIP或有版权限制'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 3),
+        ));
+      }
     }
   }
 
