@@ -346,11 +346,14 @@ class _HomeScreenState extends State<HomeScreen>
 
   Widget _tabBar() {
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
+      padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
       child: Row(children: [
         _tabItem('🔥 DJ', 0, _filteredSongs[MusicCategory.dj]?.length ?? 0),
+        const SizedBox(width: 6),
         _tabItem('🎵 流行', 1, _filteredSongs[MusicCategory.pop]?.length ?? 0),
+        const SizedBox(width: 6),
         _tabItem('⭐ 收藏', 2, _countFav()),
+        const SizedBox(width: 6),
         _tabItem('🌐 在线', 3, null),
       ]),
     );
@@ -360,23 +363,27 @@ class _HomeScreenState extends State<HomeScreen>
     final selected = _tabController.index == index;
     return Expanded(
       child: GestureDetector(
-        onTap: () => _tabController.animateTo(index),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 250),
-          margin: const EdgeInsets.symmetric(horizontal: 3),
+        onTap: () {
+          _tabController.animateTo(index);
+          setState(() {});
+        },
+        child: Container(
           padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
             color: selected ? AppColors.foxOrange.withValues(alpha: 0.15) : AppColors.glass,
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
-              color: selected ? AppColors.foxOrange.withValues(alpha: 0.5) : AppColors.glassBorder,
-              width: selected ? 1.2 : 0.5,
+              color: selected ? AppColors.foxOrange.withValues(alpha: 0.6) : AppColors.glassBorder,
+              width: selected ? 1.5 : 0.5,
             ),
-            boxShadow: selected ? [
-              BoxShadow(color: AppColors.glowOrange, blurRadius: 16, spreadRadius: 2),
-              BoxShadow(color: AppColors.foxOrange.withValues(alpha: 0.4), blurRadius: 8),
-            ] : null,
           ),
+          foregroundDecoration: selected ? BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(color: AppColors.glowOrange, blurRadius: 18, spreadRadius: 3),
+              BoxShadow(color: AppColors.foxOrange.withValues(alpha: 0.5), blurRadius: 10),
+            ],
+          ) : null,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -387,8 +394,7 @@ class _HomeScreenState extends State<HomeScreen>
               )),
               if (count != null) ...[
                 const SizedBox(height: 2),
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 250),
+                Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
                   decoration: BoxDecoration(
                     color: selected ? AppColors.foxOrange.withValues(alpha: 0.2) : Colors.transparent,
