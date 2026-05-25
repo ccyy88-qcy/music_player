@@ -83,7 +83,6 @@ class MusicService : Service() {
             .addAction(playPauseIcon, if (isPlaying) "暂停" else "播放", playPausePi)
             .addAction(android.R.drawable.ic_media_next, "下一首", nextPi)
             .addAction(android.R.drawable.ic_delete, "停止", stopPi)
-            .setStyle(androidx.media.app.NotificationCompat.MediaStyle().setShowActionsInCompactView(0, 1, 2))
             .setOngoing(true).setPriority(NotificationCompat.PRIORITY_LOW)
             .setSilent(true).setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .build()
