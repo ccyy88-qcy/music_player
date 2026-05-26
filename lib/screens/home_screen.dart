@@ -326,12 +326,15 @@ class _HomeScreenState extends State<HomeScreen>
     );
     if (confirm != true) return;
     try {
-      await File(song.filePath).delete();
-      // 删除同目录歌词
-      final lrcPath = song.filePath.replaceAll(RegExp(r'\.[^.]+$'), '.lrc');
-      try { await File(lrcPath).delete(); } catch (_) {}
+      final f = File(song.filePath);
+      if (await f.exists()) {
+        await f.delete();
+        // 删除同目录歌词
+        final lrcPath = song.filePath.replaceAll(RegExp(r'\.[^.]+$'), '.lrc');
+        if (await File(lrcPath).exists()) await File(lrcPath).delete();
+      }
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('✅ 已删除: ${song.title}'), backgroundColor: Colors.green));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('✅ 已移除: ${song.title}'), backgroundColor: Colors.green));
         _scanMusic(forceFull: true);
       }
     } catch (e) {
