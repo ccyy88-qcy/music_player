@@ -335,7 +335,21 @@ class _HomeScreenState extends State<HomeScreen>
         _scanMusic(forceFull: true);
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ 删除失败: $e'), backgroundColor: Colors.red));
+      if (mounted) {
+        final errMsg = e.toString();
+        if (errMsg.contains('Permission') || errMsg.contains('denied') || errMsg.contains('Read-only')) {
+          showDialog(context: context, builder: (ctx) => AlertDialog(
+            backgroundColor: AppColors.surface,
+            title: const Text('⚠️ 无法删除', style: TextStyle(color: AppColors.textPrimary)),
+            content: const Text('Android 11+限制了应用直接删除文件。\n请使用文件管理器手动删除，或开启「管理所有文件」权限。', style: TextStyle(color: AppColors.textSecondary)),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('知道了', style: TextStyle(color: AppColors.foxOrange))),
+            ],
+          ));
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ 删除失败: $e'), backgroundColor: Colors.red));
+        }
+      }
     }
   }
 

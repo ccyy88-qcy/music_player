@@ -171,7 +171,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   void initState() {
     super.initState();
     _posSub = audioHandler.player.positionStream.listen((p) {
-      if (mounted) { _pos = p; audioHandler.updateLyricPosition(p); setState(() {}); }
+      if (mounted) { _pos = p; setState(() {}); }
     });
     audioHandler.player.durationStream.listen((d) { if (mounted) _dur = d ?? Duration.zero; });
     _sleepUi = Timer.periodic(const Duration(seconds: 1), (_) { if (mounted && audioHandler.sleepActive) setState(() {}); });

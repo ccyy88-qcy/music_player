@@ -39,18 +39,25 @@ class LyricParser {
     String title,
     String artist,
   ) async {
-    try {
-      // 1. LRCLIB
-      final lrc = await _searchLRCLIB(title, artist);
-      if (lrc.isNotEmpty) return lrc;
-    } catch (_) {}
+    // 尝试多种搜索方式：原歌名 → 清理后 → 括号前 → 只要歌名主体
+    final searchQueries = <String>[];
+    searchQueries.add(title);
+    final cleaned = _cleanTitle(title);
+    if (cleaned != title && cleaned.isNotEmpty) searchQueries.add(cleaned);
+    // 取括号/破折号前的主体部分
+    final mainPart = title.split(RegExp(r'[\(（\-—]')).first.trim();
+    if (mainPart != title && mainPart != cleaned && mainPart.isNotEmpty) searchQueries.add(mainPart);
 
-    try {
-      // 2. 网易云歌词（对中文歌曲覆盖更好）
-      final neteaseLrc = await _searchNetease(title, artist);
-      if (neteaseLrc.isNotEmpty) return neteaseLrc;
-    } catch (_) {}
-
+    for (final query in searchQueries) {
+      try {
+        final lrc = await _searchLRCLIB(query, artist);
+        if (lrc.isNotEmpty) return lrc;
+      } catch (_) {}
+      try {
+        final neteaseLrc = await _searchNetease(query, artist);
+        if (neteaseLrc.isNotEmpty) return neteaseLrc;
+      } catch (_) {}
+    }
     return [];
   }
 

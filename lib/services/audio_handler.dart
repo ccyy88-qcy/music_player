@@ -44,6 +44,8 @@ class AudioPlayerHandler {
       }
     });
     _player.playingStream.listen((_) => _notify());
+    // 全局监听播放位置 → 自动更新歌词索引（不依赖播放器页面）
+    _player.positionStream.listen((p) => _lyricIndex = LyricParser.findCurrentIndex(_lyrics, p));
     _mediaChannel.setMethodCallHandler((call) async {
       switch (call.method) {
         case 'playPause': togglePlay(); break;
@@ -117,7 +119,6 @@ class AudioPlayerHandler {
     final onlineLrc = await LyricParser.searchOnline(s.title, s.artist);
     if (reqId == _lyricReqId) { _lyrics = onlineLrc; _lyricIndex = -1; }
   }
-  void updateLyricPosition(Duration p) => _lyricIndex = LyricParser.findCurrentIndex(_lyrics, p);
   void setOnlineLyrics(List<LyricLine> l) { _lyricReqId++; _lyrics = l; _lyricIndex = -1; }
   void dispose() { _sleepTimer?.cancel(); _stopFg(); _player.dispose(); }
 }
