@@ -340,13 +340,20 @@ class _HomeScreenState extends State<HomeScreen>
     } catch (e) {
       if (mounted) {
         final errMsg = e.toString();
-        if (errMsg.contains('Permission') || errMsg.contains('denied') || errMsg.contains('Read-only')) {
+        if (errMsg.contains('Permission') || errMsg.contains('denied') || errMsg.contains('Read-only') || errMsg.contains('errno') || errMsg.contains('No such file')) {
+          // Android 分区存储限制，File.delete() 即使文件存在也会返回 ENOENT
           showDialog(context: context, builder: (ctx) => AlertDialog(
             backgroundColor: AppColors.surface,
             title: const Text('⚠️ 无法删除', style: TextStyle(color: AppColors.textPrimary)),
-            content: const Text('Android 11+限制了应用直接删除文件。\n请使用文件管理器手动删除，或开启「管理所有文件」权限。', style: TextStyle(color: AppColors.textSecondary)),
+            content: const Text('Android 11+限制应用直接删除文件。\n\n已从列表移除，文件需手动删除：\n用文件管理器找到该文件手动删除即可。', style: TextStyle(color: AppColors.textSecondary)),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('知道了', style: TextStyle(color: AppColors.foxOrange))),
+              TextButton(onPressed: () {
+                if (mounted) {
+                  _scanMusic(forceFull: true);
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ 已从列表移除'), backgroundColor: Colors.green));
+                }
+                Navigator.pop(ctx);
+              }, child: const Text('好的，从列表移除', style: TextStyle(color: AppColors.foxOrange))),
             ],
           ));
         } else {
