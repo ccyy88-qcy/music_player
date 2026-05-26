@@ -150,7 +150,8 @@ class SongTile extends StatelessWidget {
   final bool isFavorite;
   final VoidCallback onTap;
   final VoidCallback? onFavorite;
-  const SongTile({super.key, required this.song, required this.isPlaying, this.isFavorite = false, required this.onTap, this.onFavorite});
+  final VoidCallback? onLongPress;
+  const SongTile({super.key, required this.song, required this.isPlaying, this.isFavorite = false, required this.onTap, this.onFavorite, this.onLongPress});
 
   @override
   Widget build(BuildContext context) {
@@ -166,6 +167,7 @@ class SongTile extends StatelessWidget {
           child: InkWell(
             borderRadius: BorderRadius.circular(14),
             onTap: onTap,
+            onLongPress: onLongPress,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               child: Row(children: [

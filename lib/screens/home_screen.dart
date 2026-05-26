@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import '../models/song.dart';
 import '../services/music_scanner.dart';
 import '../services/storage_manager.dart';
 import '../services/audio_handler.dart';
+import '../services/lyric_parser.dart';
 import '../widgets/music_widgets.dart';
 import 'player_screen.dart';
 import 'settings_screen.dart';
@@ -222,6 +224,144 @@ class _HomeScreenState extends State<HomeScreen>
   Future<void> _openSettings() async { await Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen())); if (mounted) _scanMusic(forceFull: true); }
   int _countFav() => _store?.getFavorites().length ?? 0;
 
+  // ─── 长按歌曲菜单 ───
+  void _onSongLongPress(BuildContext context, Song song) {
+    final isLocal = !song.filePath.startsWith('http');
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 12), decoration: BoxDecoration(color: AppColors.textSecondary.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(2))),
+            ListTile(
+              leading: const Icon(Icons.info_outline_rounded, color: AppColors.foxOrange), title: const Text('🎵 歌曲详情', style: TextStyle(color: AppColors.textPrimary)),
+              onTap: () { Navigator.pop(ctx); _showSongDetails(context, song); },
+            ),
+            ListTile(
+              leading: const Icon(Icons.lyrics_rounded, color: AppColors.purple), title: const Text('📄 下载歌词', style: TextStyle(color: AppColors.textPrimary)),
+              subtitle: const Text('保存.lrc文件到歌曲目录', style: TextStyle(color: AppColors.textSecondary, fontSize: 11)),
+              onTap: () { Navigator.pop(ctx); _downloadLyrics(context, song); },
+            ),
+            if (isLocal) ListTile(
+              leading: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent), title: const Text('🗑️ 删除歌曲', style: TextStyle(color: Colors.redAccent)),
+              onTap: () { Navigator.pop(ctx); _deleteSong(context, song); },
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  void _showSongDetails(BuildContext context, Song song) {
+    final isLocal = !song.filePath.startsWith('http');
+    String sizeStr = '';
+    if (isLocal) {
+      try { final f = File(song.filePath); if (f.existsSync()) sizeStr = '${(f.lengthSync() / 1024 / 1024).toStringAsFixed(1)}MB'; } catch (_) {}
+    }
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(children: [
+          Container(width: 40, height: 40, decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), gradient: const LinearGradient(colors: [AppColors.foxOrange, AppColors.purple])), child: const Icon(Icons.music_note_rounded, color: Colors.white, size: 22)),
+          const SizedBox(width: 10), Expanded(child: Text(song.title, style: const TextStyle(color: AppColors.textPrimary, fontSize: 17, fontWeight: FontWeight.bold), maxLines: 2, overflow: TextOverflow.ellipsis)),
+        ]),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          _detailRow('歌手', song.artist.isNotEmpty ? song.artist : '未知'),
+          _detailRow('分类', song.category == MusicCategory.dj ? '🔥 DJ' : '🎵 流行'),
+          _detailRow('播放次数', '${song.playCount} 次'),
+          if (sizeStr.isNotEmpty) _detailRow('文件大小', sizeStr),
+          if (song.lastPlayed > 0) _detailRow('上次播放', DateTime.fromMillisecondsSinceEpoch(song.lastPlayed).toString().substring(0, 19)),
+          if (isLocal) ...[const SizedBox(height: 6), Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: AppColors.glass, borderRadius: BorderRadius.circular(8)), child: Text(song.filePath, style: TextStyle(color: AppColors.textSecondary.withValues(alpha: 0.5), fontSize: 10), maxLines: 3, overflow: TextOverflow.ellipsis))],
+        ]),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('关闭', style: TextStyle(color: AppColors.foxOrange)))],
+      ),
+    );
+  }
+
+  Widget _detailRow(String label, String value) {
+    return Padding(padding: const EdgeInsets.symmetric(vertical: 3), child: Row(children: [
+      Text('$label：', style: TextStyle(color: AppColors.textSecondary.withValues(alpha: 0.6), fontSize: 13)),
+      Expanded(child: Text(value, style: const TextStyle(color: AppColors.textPrimary, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis)),
+    ]));
+  }
+
+  Future<void> _downloadLyrics(BuildContext context, Song song) async {
+    try {
+      final lrc = await LyricParser.searchOnline(song.title, song.artist);
+      if (lrc.isEmpty) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('未找到歌词'), backgroundColor: Colors.orange));
+        return;
+      }
+      final lrcPath = song.filePath.replaceAll(RegExp(r'\.[^.]+$'), '.lrc');
+      final lrcText = lrc.map((l) {
+        final min = l.time.inMinutes.remainder(60).toString().padLeft(2, '0');
+        final sec = l.time.inSeconds.remainder(60).toString().padLeft(2, '0');
+        final ms = (l.time.inMilliseconds % 1000).toString().padLeft(3, '0');
+        return '[$min:$sec.$ms]${l.text}';
+      }).join('\n');
+      await File(lrcPath).writeAsString(lrcText);
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('✅ 歌词已下载: ${lrcPath.split('/').last}'), backgroundColor: Colors.green));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ 下载歌词失败: $e'), backgroundColor: Colors.red));
+    }
+  }
+
+  Future<void> _deleteSong(BuildContext context, Song song) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('确认删除', style: TextStyle(color: AppColors.textPrimary)),
+        content: Text('确定要删除「${song.title}」吗？\n此操作不可恢复。', style: const TextStyle(color: AppColors.textSecondary)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消', style: TextStyle(color: AppColors.textSecondary))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('删除', style: TextStyle(color: Colors.redAccent))),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    try {
+      await File(song.filePath).delete();
+      // 删除同目录歌词
+      final lrcPath = song.filePath.replaceAll(RegExp(r'\.[^.]+$'), '.lrc');
+      try { await File(lrcPath).delete(); } catch (_) {}
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('✅ 已删除: ${song.title}'), backgroundColor: Colors.green));
+        _scanMusic(forceFull: true);
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ 删除失败: $e'), backgroundColor: Colors.red));
+    }
+  }
+
+  // ─── 顶部歌词显示 ───
+  Widget _topLyrics() {
+    return StreamBuilder<bool>(
+      stream: audioHandler.player.playingStream,
+      builder: (_, snap) {
+        final playing = snap.data == true;
+        final lyrics = audioHandler.lyrics;
+        final idx = audioHandler.lyricIndex;
+        if (!playing || lyrics.isEmpty || idx < 0) return const SizedBox.shrink();
+
+        final cur = idx < lyrics.length ? lyrics[idx].text : '';
+        final next = idx + 1 < lyrics.length ? lyrics[idx + 1].text : '';
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+          child: Column(children: [
+            Text(cur, style: const TextStyle(color: AppColors.foxOrange, fontSize: 13, fontWeight: FontWeight.w600, height: 1.3), maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
+            if (next.isNotEmpty) Text(next, style: TextStyle(color: AppColors.textSecondary.withValues(alpha: 0.4), fontSize: 11, height: 1.2), maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
+          ]),
+        );
+      },
+    );
+  }
+
   @override
   void dispose() { _tabController.dispose(); _searchCtrl.dispose(); _gradientCtrl.dispose(); _songSub?.cancel(); WidgetsBinding.instance.removeObserver(this); super.dispose(); }
 
@@ -233,6 +373,7 @@ class _HomeScreenState extends State<HomeScreen>
         child: Column(children: [
           _foxHeader(total),
           if (!_showSearch) _tabBar(),
+          _topLyrics(),
           Expanded(child: _permissionDenied ? _permView() : _loading ? _loadingView() : _error != null ? _errorView() : _showSearch ? _searchResults() : TabBarView(controller: _tabController, children: [
             _songList(MusicCategory.dj), _songList(MusicCategory.pop), _favList(), const OnlineScreen(),
           ])),
@@ -468,7 +609,7 @@ class _HomeScreenState extends State<HomeScreen>
     return ListView.builder(
       padding: const EdgeInsets.only(top: 8),
       itemCount: all.length,
-      itemBuilder: (_, i) => SongTile(song: all[i], isPlaying: _isPlaying(all[i]), isFavorite: _store?.isFavorite(all[i].id) ?? false, onTap: () => _playList(all, startIndex: i), onFavorite: () => _toggleFav(all[i])),
+      itemBuilder: (_, i) => SongTile(song: all[i], isPlaying: _isPlaying(all[i]), isFavorite: _store?.isFavorite(all[i].id) ?? false, onTap: () => _playList(all, startIndex: i), onFavorite: () => _toggleFav(all[i]), onLongPress: () => _onSongLongPress(context, all[i])),
     );
   }
 
@@ -484,7 +625,7 @@ class _HomeScreenState extends State<HomeScreen>
       Expanded(child: ListView.builder(
         padding: const EdgeInsets.only(top: 4),
         itemCount: songs.length,
-        itemBuilder: (_, i) { final s = songs[i]; return SongTile(song: s, isPlaying: _isPlaying(s), isFavorite: _store?.isFavorite(s.id) ?? false, onTap: () => _playList(songs, startIndex: i), onFavorite: () => _toggleFav(s)); },
+        itemBuilder: (_, i) { final s = songs[i]; return SongTile(song: s, isPlaying: _isPlaying(s), isFavorite: _store?.isFavorite(s.id) ?? false, onTap: () => _playList(songs, startIndex: i), onFavorite: () => _toggleFav(s), onLongPress: () => _onSongLongPress(context, s)); },
       )),
     ]);
   }
@@ -503,7 +644,7 @@ class _HomeScreenState extends State<HomeScreen>
       Expanded(child: ListView.builder(
         padding: const EdgeInsets.only(top: 4),
         itemCount: list.length,
-        itemBuilder: (_, i) => SongTile(song: list[i], isPlaying: _isPlaying(list[i]), isFavorite: true, onTap: () => _playList(list, startIndex: i), onFavorite: () => _toggleFav(list[i])),
+        itemBuilder: (_, i) => SongTile(song: list[i], isPlaying: _isPlaying(list[i]), isFavorite: true, onTap: () => _playList(list, startIndex: i), onFavorite: () => _toggleFav(list[i]), onLongPress: () => _onSongLongPress(context, list[i])),
       )),
     ]);
   }
