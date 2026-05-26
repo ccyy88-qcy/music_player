@@ -41,6 +41,11 @@ class MainActivity : FlutterActivity() {
                     "requestBattery" -> { requestBatteryOpt(); result.success(true) }
                     "requestNotification" -> { requestNotificationPermission(); result.success(true) }
                     "isBatteryIgnored" -> { result.success(isBatteryIgnored()) }
+                    "deleteFile" -> {
+                        val filePath = call.argument<String>("path") ?: ""
+                        val success = deleteFileViaMediaStore(filePath)
+                        result.success(success)
+                    }
                     else -> result.notImplemented()
                 }
             }
@@ -97,4 +102,27 @@ class MainActivity : FlutterActivity() {
 
     private fun isBatteryIgnored() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
         (getSystemService(POWER_SERVICE) as PowerManager).isIgnoringBatteryOptimizations(packageName) else true
+
+    private fun deleteFileViaMediaStore(filePath: String): Boolean {
+        return try {
+            val file = java.io.File(filePath)
+            if (!file.exists()) return true
+            // 方法1: MediaStore 查询URI后删除
+            val uri = MediaStore.Files.getContentUri("external")
+            val projection = arrayOf(MediaStore.Files.FileColumns._ID)
+            val selection = MediaStore.Files.FileColumns.DATA + "=?"
+            val selectionArgs = arrayOf(filePath)
+            val cursor = contentResolver.query(uri, projection, selection, selectionArgs, null)
+            cursor?.use { c ->
+                while (c.moveToNext()) {
+                    val id = c.getLong(0)
+                    val deleteUri = Uri.withAppendedPath(uri, id.toString())
+                    contentResolver.delete(deleteUri, null, null)
+                    return true
+                }
+            }
+            // 方法2: 直接文件删除
+            file.delete()
+        } catch (_: Exception) { false }
+    }
 }

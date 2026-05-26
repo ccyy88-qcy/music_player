@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
@@ -326,15 +327,23 @@ class _HomeScreenState extends State<HomeScreen>
     );
     if (confirm != true) return;
     try {
-      final f = File(song.filePath);
-      if (await f.exists()) {
-        await f.delete();
-        // 删除同目录歌词
+      // 优先走原生MediaStore删除（绕过分区存储限制）
+      bool deleted = false;
+      try {
+        deleted = await const MethodChannel('com.alee.music_player/service')
+            .invokeMethod<bool>('deleteFile', {'path': song.filePath}) ?? false;
+      } catch (_) {}
+      if (!deleted) {
+        // Dart侧降级
+        final f = File(song.filePath);
+        if (await f.exists()) {
+          await f.delete();
+        }
         final lrcPath = song.filePath.replaceAll(RegExp(r'\.[^.]+$'), '.lrc');
         if (await File(lrcPath).exists()) await File(lrcPath).delete();
       }
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('✅ 已移除: ${song.title}'), backgroundColor: Colors.green));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('✅ 已删除: ${song.title}'), backgroundColor: Colors.green));
         _scanMusic(forceFull: true);
       }
     } catch (e) {
