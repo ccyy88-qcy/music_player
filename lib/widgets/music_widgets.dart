@@ -181,7 +181,7 @@ class SongTile extends StatelessWidget {
                 ),
                 const SizedBox(width: 12),
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(song.title, style: TextStyle(color: isPlaying ? AppColors.foxOrange : AppColors.textPrimary, fontWeight: isPlaying ? FontWeight.w700 : FontWeight.w500, fontSize: 14), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  Text(song.title, style: TextStyle(color: isPlaying ? AppColors.foxOrange : AppColors.textPrimary, fontWeight: isPlaying ? FontWeight.w600 : FontWeight.w500, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
                   const SizedBox(height: 3),
                   Row(children: [
                     Text(isDJ ? 'DJ' : '流行', style: TextStyle(fontSize: 11, color: isPlaying ? AppColors.foxLight : AppColors.textSecondary)),

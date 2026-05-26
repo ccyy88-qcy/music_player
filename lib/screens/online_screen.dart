@@ -223,10 +223,22 @@ class _OnlineScreenState extends State<OnlineScreen> {
         onTap: () => _playOnline(s),
         leading: Container(width: 44, height: 44, decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), gradient: LinearGradient(colors: isPlay ? [Colors.pink.shade400, Colors.purple.shade400] : [Colors.blueGrey.shade700, Colors.blueGrey.shade800])), child: Icon(isDL ? Icons.downloading_rounded : Icons.music_note_rounded, color: Colors.white.withValues(alpha: 0.7), size: 22)),
         title: Row(children: [
-          Expanded(child: Text(s.title, style: TextStyle(color: isPlay ? Colors.pink.shade300 : Colors.white, fontSize: 14, fontWeight: isPlay ? FontWeight.w600 : FontWeight.normal), maxLines: 1, overflow: TextOverflow.ellipsis)),
+          Expanded(child: Text(s.title, style: TextStyle(color: isPlay ? Colors.pink.shade300 : Colors.white, fontSize: 13, fontWeight: isPlay ? FontWeight.w600 : FontWeight.normal), maxLines: 1, overflow: TextOverflow.ellipsis)),
           if (s.fee > 0) Container(margin: const EdgeInsets.only(left: 6), padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1), decoration: BoxDecoration(color: s.feeColor.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(4), border: Border.all(color: s.feeColor.withValues(alpha: 0.3))), child: Text(s.feeLabel, style: TextStyle(color: s.feeColor, fontSize: 9, fontWeight: FontWeight.w600))),
         ]),
-        subtitle: Text('${s.artist}${s.album.isNotEmpty ? ' · ${s.album}' : ''}', style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),
+        subtitle: Row(children: [
+          // 来源标签
+          Container(padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1), margin: const EdgeInsets.only(right: 6), decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(4)), child: Text(s.source.toUpperCase(), style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 9, fontWeight: FontWeight.w600))),
+          // 时长
+          if (s.duration != null && s.duration! > 0) ...[
+            Icon(Icons.access_time_rounded, size: 10, color: Colors.white.withValues(alpha: 0.2)),
+            const SizedBox(width: 2),
+            Text('${(s.duration! / 60000).floor()}:${((s.duration! % 60000) / 1000).floor().toString().padLeft(2, "0")}', style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 10)),
+            const SizedBox(width: 8),
+          ],
+          // 歌手
+          Expanded(child: Text(s.artist, style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis)),
+        ]),
         trailing: Row(mainAxisSize: MainAxisSize.min, children: [
           if (isPlay) const Icon(Icons.volume_up_rounded, color: Colors.pink, size: 20)
           else IconButton(icon: const Icon(Icons.download_rounded, color: Colors.white30, size: 22), onPressed: isDL ? null : () => _download(s), padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 36)),
