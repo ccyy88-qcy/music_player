@@ -8,12 +8,12 @@ import 'storage_manager.dart';
 typedef ScanProgressCallback = void Function(int scanned, int current, String dir);
 
 class MusicScanner {
-  /// 请求权限（Android 13+ 用 READ_MEDIA_AUDIO，老版本用存储权限）
+  /// 请求权限（优先MANAGE_EXTERNAL_STORAGE以支持文件扫描）
   static Future<bool> requestPermission() async {
-    // Android 13+ - 读取音频权限
-    if (await Permission.audio.request().isGranted) return true;
     // 管理所有文件权限（Android 11+，可读全部目录）
     if (await Permission.manageExternalStorage.request().isGranted) return true;
+    // Android 13+ - 读取音频权限
+    if (await Permission.audio.request().isGranted) return true;
     // 老版本存储权限
     if (await Permission.storage.request().isGranted) return true;
     return false;
