@@ -239,22 +239,29 @@ class _PlayerScreenState extends State<PlayerScreen> with TickerProviderStateMix
           );
           Widget lyricWidget = Text(lrc[i].text, style: textStyle, textAlign: TextAlign.center);
 
-          // 卡拉OK模式：当前行用渐变色填充
+          // 卡拉OK模式：平滑渐变染色
           if (isCur && _karaokeMode && _lrcProgress > 0) {
+            final highlightColor = colors[0];
+            final dimColor = AppColors.textSecondary.withValues(alpha: 0.15);
+            final midColor = Color.lerp(highlightColor, dimColor, 0.5)!;
+            final progress = _lrcProgress.clamp(0.0, 1.0);
+
             lyricWidget = ShaderMask(
               shaderCallback: (bounds) => LinearGradient(
                 begin: Alignment.centerLeft,
                 end: Alignment.centerRight,
                 colors: [
-                  colors[0],
-                  colors[0],
-                  AppColors.textSecondary.withValues(alpha: 0.15),
-                  AppColors.textSecondary.withValues(alpha: 0.15),
+                  highlightColor,
+                  highlightColor,
+                  midColor,
+                  dimColor,
+                  dimColor,
                 ],
                 stops: [
                   0.0,
-                  (_lrcProgress - 0.05).clamp(0.0, 1.0),
-                  _lrcProgress.clamp(0.0, 1.0),
+                  (progress - 0.15).clamp(0.0, 1.0),
+                  (progress - 0.05).clamp(0.0, 1.0),
+                  progress.clamp(0.0, 1.0),
                   1.0,
                 ],
               ).createShader(bounds),
