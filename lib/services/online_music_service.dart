@@ -392,25 +392,7 @@ class AggregateSource extends MusicSource {
       if (s.key == song.source) continue;
       try { final u = await s.getPlayUrl(song); if (u != null && u.startsWith('http')) return u; } catch (_) {}
     }
-    // 3. 同源搜索免费替代（VIP歌曲找cover/free版本）
-    if (song.fee > 0) {
-      final sameSrc = _srcMap[song.source];
-      if (sameSrc != null) {
-        try {
-          final results = await sameSrc.search('${song.title} ${song.artist}', limit: 10);
-          for (final alt in results) {
-            if (alt.fee == 0 && alt.id != song.id) {
-              try {
-                final u = await sameSrc.getPlayUrl(alt);
-                if (u != null && u.startsWith('http')) return u;
-              } catch (_) {}
-            }
-          }
-        } catch (_) {}
-      }
-    }
-
-    // 4. 跨源搜索同名歌曲
+    // 3. 跨源搜索同名歌曲（VIP歌曲在QQ/酷狗找替代版本）
     try {
       final others = _srcs.where((s) => s.key != song.source).toList();
       for (final s in others) {
