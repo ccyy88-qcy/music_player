@@ -89,6 +89,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         return;
       }
     }
+    // 首次启动自动请求悬浮窗权限
+    audioHandler.requestOverlayPermission();
     _scanMusic();
   }
 
