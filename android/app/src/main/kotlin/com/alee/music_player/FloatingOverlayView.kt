@@ -108,8 +108,8 @@ class FloatingOverlayView(context: Context) : View(context) {
             // 系统标准图标
             val icon = if (isPlaying) pauseDrawable else playDrawable
             icon?.let {
-                val is = (r * 1.4f).toInt()
-                it.setBounds((cx - is / 2f).toInt(), (cy - is / 2f).toInt(), (cx + is / 2f).toInt(), (cy + is / 2f).toInt())
+                val iconSz = (r * 1.4f).toInt()
+                it.setBounds((cx - iconSz / 2f).toInt(), (cy - iconSz / 2f).toInt(), (cx + iconSz / 2f).toInt(), (cy + iconSz / 2f).toInt())
                 it.draw(canvas)
             }
         } else {
