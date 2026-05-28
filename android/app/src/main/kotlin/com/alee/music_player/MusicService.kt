@@ -40,7 +40,6 @@ class MusicService : Service() {
         mediaSession?.setCallback(object : MediaSession.Callback() {
             override fun onPlay() { sendAction("playPause") }
             override fun onPause() { sendAction("playPause") }
-            override fun onPlayPause() { sendAction("playPause") }
             override fun onSkipToNext() { sendAction("next") }
             override fun onSkipToPrevious() { sendAction("prev") }
             override fun onSeekTo(pos: Long) {

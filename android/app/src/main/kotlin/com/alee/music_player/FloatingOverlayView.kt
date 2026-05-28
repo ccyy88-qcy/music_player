@@ -143,7 +143,7 @@ class FloatingOverlayView(context: Context) : View(context) {
         // ── 进度条 ──
         val progressH = 3 * d
         val progressY = h - 2.5f * d
-        val progressW = w - (safeLeft + safeRight).coerceAtMost(0f)
+        val progressW = w - (safeLeft + safeRight).coerceAtMost(0)
         val progressX = safeLeft.toFloat()
 
         progressBgPaint.strokeWidth = 2 * d
