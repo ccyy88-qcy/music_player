@@ -37,6 +37,11 @@ class AppColors {
   static const glass = Color(0x0AFFFFFF);
   static const glassBorder = Color(0x15FFFFFF);
   static const divider = Color(0x12FFFFFF);
+  static const glowPrimary = Color(0x30FF6B35);
+  static const glowAccent = Color(0x20A855F7);
+  static const gradientPrimary = [orange, Color(0xFFE85D2C)];
+  static const gradientAccent = [purple, Color(0xFF7C3AED)];
+  static const gradientMix = [orange, purple];
 
   // 分类色
   static const catDJ = [orange, red, yellow];
