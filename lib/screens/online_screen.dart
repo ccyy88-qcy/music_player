@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import '../models/song.dart';
 import '../services/online_music_service.dart';
+import '../services/chart_service.dart';
 import '../services/audio_handler.dart';
 import '../services/lyric_parser.dart';
 import '../widgets/music_widgets.dart';
@@ -11,12 +12,11 @@ import 'player_screen.dart';
 
 class OnlineScreen extends StatefulWidget {
   const OnlineScreen({super.key});
-
   @override
   State<OnlineScreen> createState() => _OnlineScreenState();
 }
 
-class _OnlineScreenState extends State<OnlineScreen> {
+class _OnlineScreenState extends State<OnlineScreen> with SingleTickerProviderStateMixin {
   final TextEditingController _searchCtrl = TextEditingController();
   final ScrollController _scrollCtrl = ScrollController();
 
@@ -29,6 +29,23 @@ class _OnlineScreenState extends State<OnlineScreen> {
   Set<String> _downloadingIds = {};
   final List<Map<String, dynamic>> _downloadBubbles = [];
   MusicSource? _source;
+
+  // 批量选择
+  bool _selectMode = false;
+  Set<String> _selectedIds = {};
+
+  // 排行榜模式
+  bool _chartMode = false;
+  List<ChartSong> _chartSongs = [];
+  bool _chartLoading = false;
+  String? _chartSource; // 'netease' | 'qq' | 'kugou'
+  String? _currentChartId;
+
+  // 批量下载进度
+  bool _batchDownloading = false;
+  int _batchDone = 0;
+  int _batchTotal = 0;
+  List<DownloadTask> _batchTasks = [];
 
   @override
   void initState() {
@@ -48,6 +65,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
     super.dispose();
   }
 
+  // ──── 搜索 ────
   Future<void> _search({bool loadMore = false}) async {
     final keyword = _searchCtrl.text.trim();
     if (keyword.isEmpty || _source == null) return;
@@ -65,39 +83,154 @@ class _OnlineScreenState extends State<OnlineScreen> {
         if (_results.isEmpty && !loadMore) _error = '未找到相关歌曲';
       });
     } catch (e) {
-      setState(() { _searching = false; _loadingMore = false; _error = '搜索失败: 请检查网络连接，或在设置中添加可用音乐源'; });
+      setState(() { _searching = false; _loadingMore = false; _error = '搜索失败: 请检查网络连接'; });
     }
   }
 
+  // ──── 排行榜 ────
+  void _enterChartMode(String sourceKey) {
+    setState(() {
+      _chartMode = true;
+      _chartSource = sourceKey;
+      _chartSongs = [];
+      _currentChartId = null;
+      _results = [];
+    });
+  }
+
+  Future<void> _loadChart(String topId) async {
+    if (_chartSource == null) return;
+    setState(() { _chartLoading = true; _currentChartId = topId; });
+    List<ChartSong> songs;
+    switch (_chartSource!) {
+      case 'netease':
+        songs = await NeteaseChart.getChart(topId);
+        break;
+      case 'qq':
+        songs = await QQChart.getChart(topId);
+        break;
+      case 'kugou':
+        songs = await KugouChart.getChart(topId);
+        break;
+      default:
+        songs = [];
+    }
+    setState(() { _chartSongs = songs; _chartLoading = false; });
+  }
+
+  void _exitChartMode() {
+    setState(() {
+      _chartMode = false;
+      _chartSource = null;
+      _chartSongs = [];
+      _currentChartId = null;
+      _results = [];
+      _selectMode = false;
+      _selectedIds.clear();
+    });
+  }
+
+  // ──── 在线播放 ────
   Future<void> _playOnline(OnlineSong song) async {
     setState(() => _playingId = song.id);
     final playUrl = await _source!.getPlayUrl(song);
     if (playUrl == null) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('获取播放地址失败'), backgroundColor: Colors.red));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${song.title} - 获取播放地址失败，可能需要VIP'), backgroundColor: Colors.red, duration: const Duration(seconds: 2)),
+        );
+      }
       setState(() => _playingId = null);
       return;
     }
-
-    // 直接网络URL播放（_createAudioSource已带User-Agent/Referer headers）
-    // 不缓存 → 即点即播，切换秒级响应
     String? lrcText;
     try { lrcText = await _source!.getLyric(song); } catch (_) {}
-    // 先停止当前播放、快速加载新歌
     audioHandler.player.stop();
     final tempSong = Song(title: song.title, artist: song.artist, filePath: playUrl, category: MusicCategory.pop);
     audioHandler.loadSongList([tempSong], startIndex: 0);
     if (lrcText != null && lrcText.isNotEmpty) {
       audioHandler.setOnlineLyrics(LyricParser.parse(lrcText));
     }
-    if (mounted) Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen()));
+    if (mounted) {
+      Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen()));
+    }
     setState(() => _playingId = null);
   }
 
+  // ──── 排行榜列表播放（整榜） ────
+  Future<void> _playChartList(List<ChartSong> songs, int startIndex) async {
+    // 并行获取歌单中所有可播放的URL，只播放可用的
+    setState(() => _playingId = songs[startIndex].id);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Row(children: [
+          SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
+          SizedBox(width: 12),
+          Text('解析播放地址...'),
+        ]), duration: Duration(seconds: 10)),
+      );
+    }
+
+    // 并行获取前20首歌的URL
+    final limit = songs.length > 20 ? 20 : songs.length;
+    final futures = <Future<String?>>[];
+    for (int i = 0; i < limit; i++) {
+      futures.add(_source!.getPlayUrl(songs[i]));
+    }
+    final urls = await Future.wait(futures);
+
+    // 只保留可播放的歌曲
+    final playableSongs = <Song>[];
+    int newStartIndex = 0;
+    for (int i = 0; i < limit; i++) {
+      final url = urls[i];
+      if (url != null && url.startsWith('http')) {
+        if (i == startIndex) newStartIndex = playableSongs.length;
+        playableSongs.add(Song(title: songs[i].title, artist: songs[i].artist, filePath: url, category: MusicCategory.pop));
+      }
+    }
+
+    if (playableSongs.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('歌曲全部无法播放（可能都需要VIP）'), backgroundColor: Colors.red),
+        );
+      }
+      setState(() => _playingId = null);
+      return;
+    }
+
+    // 后台预加载更多歌曲（第21首起）
+    if (songs.length > 20) {
+      _preloadRemainingUrls(songs, playableSongs);
+    }
+
+    audioHandler.loadSongList(playableSongs, startIndex: newStartIndex);
+
+    if (mounted) {
+      Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen()));
+    }
+    setState(() => _playingId = null);
+  }
+
+  void _preloadRemainingUrls(List<ChartSong> songs, List<Song> playable) async {
+    for (int i = 20; i < songs.length; i++) {
+      try {
+        final url = await _source!.getPlayUrl(songs[i]);
+        if (url != null && url.startsWith('http')) {
+          playable.add(Song(title: songs[i].title, artist: songs[i].artist, filePath: url, category: MusicCategory.pop));
+        }
+      } catch (_) {}
+    }
+    // 预加载的歌曲会在下次loadSongList时生效
+  }
+
+  // ──── 单曲下载 ────
   Future<void> _download(OnlineSong song) async {
     if (_downloadingIds.contains(song.id)) return;
     setState(() => _downloadingIds.add(song.id));
-    
-    // 显示下载中提示
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Row(children: [
@@ -108,34 +241,27 @@ class _OnlineScreenState extends State<OnlineScreen> {
         duration: const Duration(seconds: 30),
       ));
     }
-    
+
     final playUrl = await _source!.getPlayUrl(song);
     if (playUrl == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('❌ 获取播放地址失败，该歌曲可能需要VIP'),
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('❌ ${song.title} - 获取播放地址失败，该歌曲可能需要VIP', style: const TextStyle(fontSize: 12)),
           backgroundColor: Colors.orange,
-          duration: Duration(seconds: 3),
+          duration: const Duration(seconds: 3),
         ));
       }
       setState(() => _downloadingIds.remove(song.id));
       return;
     }
-    
-    // 尝试Download目录（Android 11+可能需要MANAGE_EXTERNAL_STORAGE）
+
     String? path = await DownloadManager.downloadSong(song, playUrl, '/storage/emulated/0/Download/xmp3');
-    
-    // 如果Download不可写，退到app外部目录
     if (path == null) {
       try {
         final extDir = await getExternalStorageDirectory();
-        if (extDir != null) {
-          path = await DownloadManager.downloadSong(song, playUrl, '${extDir.path}/Music/xmp3');
-        }
+        if (extDir != null) path = await DownloadManager.downloadSong(song, playUrl, '${extDir.path}/Music/xmp3');
       } catch (_) {}
     }
-    
-    // 还不行就退到app文档目录
     if (path == null) {
       try {
         final docDir = await getApplicationDocumentsDirectory();
@@ -149,6 +275,111 @@ class _OnlineScreenState extends State<OnlineScreen> {
     }
   }
 
+  // ──── 批量下载 ────
+  Future<void> _batchDownload() async {
+    List<OnlineSong> targets;
+    if (_selectMode && _selectedIds.isNotEmpty) {
+      targets = _results.where((s) => _selectedIds.contains('${s.id}_${s.source}')).toList();
+      if (_chartMode) {
+        targets = _chartSongs.cast<OnlineSong>().where((s) => _selectedIds.contains('${s.id}_${s.source}')).toList();
+      }
+    } else {
+      targets = _chartMode ? _chartSongs.cast<OnlineSong>() : _results;
+    }
+    if (targets.isEmpty) return;
+
+    final saveDir = '/storage/emulated/0/Download/xmp3';
+    final dir = Directory(saveDir);
+    if (!dir.existsSync()) dir.createSync(recursive: true);
+
+    setState(() {
+      _batchDownloading = true;
+      _batchDone = 0;
+      _batchTotal = targets.length;
+      _selectMode = false;
+      _selectedIds.clear();
+    });
+
+    final downloader = BatchDownloadManager(
+      source: _source!,
+      saveDir: saveDir,
+      onTaskUpdate: (task) { if (mounted) setState(() {}); },
+      onProgress: (done, total) { if (mounted) setState(() { _batchDone = done; _batchTotal = total; }); },
+    );
+
+    final tasks = await downloader.downloadAll(targets);
+
+    setState(() {
+      _batchDownloading = false;
+      _batchTasks = tasks;
+    });
+
+    // 显示结果
+    final success = tasks.where((t) => t.status == DownloadTaskStatus.success).length;
+    final failed = tasks.where((t) => t.status == DownloadTaskStatus.failed).length;
+    final skipped = tasks.where((t) => t.status == DownloadTaskStatus.skipped).length;
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('下载完成: $success 成功 / $failed 失败 / $skipped 跳过'),
+        backgroundColor: failed > 0 ? Colors.orange : Colors.green,
+        duration: const Duration(seconds: 5),
+        action: SnackBarAction(label: '详情', textColor: Colors.white, onPressed: () => _showBatchResult(tasks)),
+      ));
+    }
+  }
+
+  void _showBatchResult(List<DownloadTask> tasks) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) {
+        final success = tasks.where((t) => t.status == DownloadTaskStatus.success).length;
+        final failed = tasks.where((t) => t.status == DownloadTaskStatus.failed).length;
+        final skipped = tasks.where((t) => t.status == DownloadTaskStatus.skipped).length;
+        return SafeArea(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(width: 36, height: 4, margin: const EdgeInsets.only(top: 12, bottom: 8),
+              decoration: BoxDecoration(color: AppColors.textSecondary.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(2))),
+            Padding(padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+                _statChip('✅ 成功', '$success', Colors.green),
+                _statChip('❌ 失败', '$failed', Colors.red),
+                _statChip('⏭️ 跳过', '$skipped', Colors.orange),
+              ])),
+            const Divider(color: AppColors.glassBorder, thickness: 0.5),
+            Flexible(child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: tasks.length,
+              itemBuilder: (_, i) {
+                final t = tasks[i];
+                return ListTile(
+                  dense: true,
+                  leading: Icon(
+                    t.status == DownloadTaskStatus.success ? Icons.check_circle :
+                    t.status == DownloadTaskStatus.failed ? Icons.error : Icons.skip_next,
+                    color: t.status == DownloadTaskStatus.success ? Colors.green :
+                           t.status == DownloadTaskStatus.failed ? Colors.red : Colors.orange,
+                    size: 20,
+                  ),
+                  title: Text(t.song.title, style: const TextStyle(color: AppColors.textPrimary, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  subtitle: Text('${t.song.artist} · ${t.statusLabel}', style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 11)),
+                );
+              },
+            )),
+          ]),
+        );
+      },
+    );
+  }
+
+  Widget _statChip(String label, String count, Color color) {
+    return Column(children: [
+      Text(count, style: TextStyle(color: color, fontSize: 20, fontWeight: FontWeight.bold)),
+      Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11)),
+    ]);
+  }
+
   void _addBubble(bool success, String title, String? path) {
     String? sizeStr;
     if (path != null && success) {
@@ -157,56 +388,246 @@ class _OnlineScreenState extends State<OnlineScreen> {
     }
     final bubble = <String, dynamic>{'title': title, 'success': success, 'size': sizeStr, 'key': UniqueKey()};
     setState(() => _downloadBubbles.insert(0, bubble));
-    // 超过3个自动移除最旧的
     if (_downloadBubbles.length > 3) _downloadBubbles.removeLast();
   }
 
+  // ──── 构建UI ────
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        Column(children: [
-          Container(
-            padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 4, left: 12, right: 12, bottom: 8),
-            decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF1A1A2E), Color(0xFF16213E)])),
-            child: Row(children: [
-              Expanded(child: Container(height: 42, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(21)), child: TextField(controller: _searchCtrl, style: const TextStyle(color: Colors.white, fontSize: 15), decoration: InputDecoration(hintText: '🔍 搜索在线歌曲...', hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.35)), prefixIcon: const Icon(Icons.search_rounded, color: Colors.white38, size: 22), border: InputBorder.none, contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10)), onSubmitted: (_) => _search(), textInputAction: TextInputAction.search))),
-              const SizedBox(width: 8),
-              _searching ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.pinkAccent)) : IconButton(icon: const Icon(Icons.send_rounded, color: Colors.pinkAccent, size: 24), onPressed: _search),
-            ]),
-          ),
-          Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4), color: Colors.black26, child: Row(children: [
-            Icon(Icons.cloud_download_rounded, size: 14, color: Colors.green.withValues(alpha: 0.7)), const SizedBox(width: 4),
-            Text(_source?.name ?? '加载中...', style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 11)),
-            const Spacer(),
-            if (_results.isNotEmpty) Text('${_results.length} 首', style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 11)),
-          ])),
-          Expanded(child: _buildResults()),
+    return Stack(children: [
+      Column(children: [
+        _buildHeader(),
+        if (_chartMode) _buildChartBar(),
+        if (_batchDownloading) _buildBatchProgress(),
+        Expanded(child: _chartMode ? _buildChartView() : _buildResults()),
+      ]),
+      _buildDownloadBubbles(),
+    ]);
+  }
+
+  Widget _buildHeader() {
+    return Container(
+      padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 4, left: 12, right: 12, bottom: 8),
+      decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF1A1A2E), Color(0xFF16213E)])),
+      child: Column(children: [
+        Row(children: [
+          if (_chartMode)
+            IconButton(icon: const Icon(Icons.arrow_back_rounded, color: Colors.white70), onPressed: _exitChartMode),
+          Expanded(child: Container(
+            height: 42,
+            decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(21)),
+            child: TextField(
+              controller: _searchCtrl,
+              style: const TextStyle(color: Colors.white, fontSize: 15),
+              decoration: InputDecoration(
+                hintText: _chartMode ? '搜索排行榜歌曲...' : '🔍 搜索在线歌曲...',
+                hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.35)),
+                prefixIcon: const Icon(Icons.search_rounded, color: Colors.white38, size: 22),
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              ),
+              onSubmitted: (_) => _chartMode ? null : _search(),
+              textInputAction: TextInputAction.search,
+              enabled: !_chartMode,
+            ),
+          )),
+          const SizedBox(width: 8),
+          if (_searching)
+            const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.pinkAccent))
+          else if (_selectMode)
+            IconButton(icon: const Icon(Icons.close_rounded, color: Colors.white70), onPressed: () { setState(() { _selectMode = false; _selectedIds.clear(); }); })
+          else
+            IconButton(icon: Icon(_chartMode ? Icons.trending_up : Icons.send_rounded, color: Colors.pinkAccent, size: 24),
+              onPressed: _chartMode ? null : _search),
         ]),
-        // 悬浮下载气泡
-        Positioned(
-          left: 16, right: 16, bottom: 0,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: _downloadBubbles.asMap().entries.map((e) {
-              final b = e.value;
-              return Padding(
-                padding: EdgeInsets.only(bottom: e.key == 0 ? 8.0 : 0),
-                child: DownloadBubble(
-                  key: b['key'],
-                  title: b['title'] as String,
-                  isSuccess: b['success'] as bool,
-                  size: b['size'] as String?,
-                  onDismiss: () {
-                    if (mounted) setState(() => _downloadBubbles.remove(b));
-                  },
+        // 排行榜快捷入口 + 批量操作栏
+        if (!_chartMode && !_selectMode)
+          Padding(padding: const EdgeInsets.only(top: 6), child: Row(children: [
+            _chipBtn('🔥 网易热歌', () => _enterChartMode('netease')),
+            const SizedBox(width: 6),
+            _chipBtn('🎵 QQ音乐', () => _enterChartMode('qq')),
+            const SizedBox(width: 6),
+            _chipBtn('🎧 酷狗', () => _enterChartMode('kugou')),
+            const Spacer(),
+            if (_results.isNotEmpty)
+              GestureDetector(onTap: () { setState(() => _selectMode = true); },
+                child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(color: AppColors.glass, borderRadius: BorderRadius.circular(8), border: Border.all(color: AppColors.glassBorder)),
+                  child: Text('多选', style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12)))),
+          ])),
+        // 批量操作栏
+        if (_selectMode)
+          Padding(padding: const EdgeInsets.only(top: 6), child: Row(children: [
+            Text('已选 ${_selectedIds.length} 首', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+            const Spacer(),
+            GestureDetector(onTap: () {
+              final all = _chartMode ? _chartSongs.map((s) => '${s.id}_${s.source}').toSet() : _results.map((s) => '${s.id}_${s.source}').toSet();
+              setState(() => _selectedIds = all.difference(_selectedIds).length < all.length / 2 ? all : {});
+            }, child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+              decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(8)),
+              child: Text('全选', style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12)))),
+            const SizedBox(width: 8),
+            GestureDetector(onTap: _selectedIds.isEmpty ? null : _batchDownload,
+              child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                decoration: BoxDecoration(
+                  gradient: _selectedIds.isEmpty ? null : const LinearGradient(colors: [Colors.green, Color(0xFF00C853)]),
+                  color: _selectedIds.isEmpty ? Colors.white.withValues(alpha: 0.05) : null,
+                  borderRadius: BorderRadius.circular(8),
                 ),
-              );
-            }).toList(),
-          ),
-        ),
-      ],
+                child: Text('批量下载', style: TextStyle(color: _selectedIds.isEmpty ? Colors.white30 : Colors.white, fontSize: 12, fontWeight: FontWeight.w600)))),
+            const SizedBox(width: 8),
+            if (_selectedIds.isNotEmpty)
+              GestureDetector(onTap: () async {
+                final songs = _chartMode
+                  ? _chartSongs.where((s) => _selectedIds.contains('${s.id}_${s.source}')).toList()
+                  : _results.where((s) => _selectedIds.contains('${s.id}_${s.source}')).toList();
+                // 构建在线播放列表
+                final firstSong = songs.first;
+                final playUrl = await _source!.getPlayUrl(firstSong);
+                if (playUrl != null) {
+                  final idx = songs.indexOf(firstSong);
+                  final tempSongs = songs.map((s) => Song(title: s.title, artist: s.artist, filePath: '', category: MusicCategory.pop)).toList();
+                  tempSongs[idx] = Song(title: firstSong.title, artist: firstSong.artist, filePath: playUrl, category: MusicCategory.pop);
+                  audioHandler.loadSongList(tempSongs, startIndex: idx);
+                  if (mounted) Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen()));
+                }
+              }, child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                decoration: BoxDecoration(gradient: const LinearGradient(colors: [Colors.purple, Colors.deepPurple]), borderRadius: BorderRadius.circular(8)),
+                child: const Text('播放所选', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)))),
+          ])),
+      ]),
+    );
+  }
+
+  Widget _chipBtn(String label, VoidCallback onTap) {
+    return GestureDetector(onTap: onTap, child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(color: AppColors.glass, borderRadius: BorderRadius.circular(8), border: Border.all(color: AppColors.glassBorder)),
+      child: Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 11)),
+    ));
+  }
+
+  Widget _buildChartBar() {
+    if (_chartSource == null) return const SizedBox.shrink();
+    List<ChartCategory> cats;
+    switch (_chartSource!) {
+      case 'netease': cats = NeteaseChart.categories; break;
+      case 'qq': cats = QQChart.categories; break;
+      case 'kugou': cats = KugouChart.categories; break;
+      default: cats = [];
+    }
+    return Container(
+      height: 48,
+      color: Colors.black26,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        itemCount: cats.length,
+        itemBuilder: (_, i) {
+          final cat = cats[i];
+          final selected = _currentChartId == cat.id;
+          return GestureDetector(onTap: () => _loadChart(cat.id), child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+              color: selected ? Colors.pink.withValues(alpha: 0.2) : AppColors.glass,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: selected ? Colors.pink.withValues(alpha: 0.5) : AppColors.glassBorder),
+            ),
+            child: Center(child: Text('${cat.icon} ${cat.name}', style: TextStyle(color: selected ? Colors.pink.shade300 : Colors.white.withValues(alpha: 0.6), fontSize: 12, fontWeight: selected ? FontWeight.w600 : FontWeight.normal))),
+          ));
+        },
+      ),
+    );
+  }
+
+  Widget _buildBatchProgress() {
+    final pct = _batchTotal > 0 ? (_batchDone / _batchTotal * 100).round() : 0;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      color: Colors.black26,
+      child: Row(children: [
+        const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.green)),
+        const SizedBox(width: 12),
+        Text('批量下载中... $_batchDone/$_batchTotal ($pct%)', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+        const Spacer(),
+        GestureDetector(onTap: () => setState(() => _batchDownloading = false),
+          child: const Icon(Icons.close, color: Colors.white38, size: 18)),
+      ]),
+    );
+  }
+
+  Widget _buildChartView() {
+    if (_chartLoading) return const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [CircularProgressIndicator(color: Colors.pinkAccent), SizedBox(height: 12), Text('加载排行榜...', style: TextStyle(color: Colors.grey))]));
+    if (_currentChartId == null) return const Center(child: Text('选择上方分类查看排行榜', style: TextStyle(color: Colors.grey)));
+    if (_chartSongs.isEmpty) return const Center(child: Text('排行榜为空', style: TextStyle(color: Colors.grey)));
+
+    return NotificationListener<ScrollNotification>(
+      onNotification: (n) {
+        if (n is ScrollEndNotification && _scrollCtrl.position.pixels >= _scrollCtrl.position.maxScrollExtent - 100 && !_loadingMore) {
+          // 排行榜不分页，但可以加载更多
+        }
+        return false;
+      },
+      child: ListView.builder(
+        controller: _scrollCtrl,
+        itemCount: _chartSongs.length,
+        itemBuilder: (_, i) {
+          final s = _chartSongs[i];
+          final isPlay = _playingId == s.id;
+          final isDL = _downloadingIds.contains(s.id);
+          final isSelected = _selectedIds.contains('${s.id}_${s.source}');
+          return GestureDetector(
+            onLongPress: () { setState(() { _selectMode = true; _selectedIds.add('${s.id}_${s.source}'); }); },
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(
+                color: isSelected ? Colors.pink.withValues(alpha: 0.1) : (isPlay ? Colors.pink.withValues(alpha: 0.08) : Colors.white.withValues(alpha: 0.03)),
+                borderRadius: BorderRadius.circular(10),
+                border: isSelected ? Border.all(color: Colors.pink.withValues(alpha: 0.4)) : (isPlay ? Border.all(color: Colors.pink.withValues(alpha: 0.3)) : null),
+              ),
+              child: ListTile(
+                onTap: _selectMode ? () {
+                  setState(() {
+                    final key = '${s.id}_${s.source}';
+                    if (_selectedIds.contains(key)) _selectedIds.remove(key);
+                    else _selectedIds.add(key);
+                    if (_selectedIds.isEmpty) _selectMode = false;
+                  });
+                } : () => _playChartList(_chartSongs, i),
+                leading: Stack(children: [
+                  Container(width: 44, height: 44,
+                    decoration: BoxDecoration(borderRadius: BorderRadius.circular(8),
+                      gradient: LinearGradient(colors: isPlay ? [Colors.pink.shade400, Colors.purple.shade400] : [Colors.blueGrey.shade700, Colors.blueGrey.shade800])),
+                    child: Center(child: isDL ? const Icon(Icons.downloading_rounded, color: Colors.white70, size: 20) : Text('${s.rank}', style: TextStyle(color: Colors.white.withValues(alpha: s.rank <= 3 ? 1.0 : 0.6), fontSize: s.rank <= 3 ? 18 : 14, fontWeight: s.rank <= 3 ? FontWeight.bold : FontWeight.normal))),
+                  ),
+                  if (_selectMode)
+                    Positioned(top: 0, right: 0, child: Icon(isSelected ? Icons.check_circle : Icons.circle_outlined, color: isSelected ? Colors.pink : Colors.white38, size: 16)),
+                ]),
+                title: Row(children: [
+                  Expanded(child: Text(s.title, style: TextStyle(color: isPlay ? Colors.pink.shade300 : Colors.white, fontSize: 13, fontWeight: isPlay ? FontWeight.w600 : FontWeight.normal), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                  if (s.fee > 0) Container(margin: const EdgeInsets.only(left: 6), padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1), decoration: BoxDecoration(color: s.feeColor.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(4), border: Border.all(color: s.feeColor.withValues(alpha: 0.3))), child: Text(s.feeLabel, style: TextStyle(color: s.feeColor, fontSize: 9, fontWeight: FontWeight.w600))),
+                ]),
+                subtitle: Row(children: [
+                  Container(padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1), margin: const EdgeInsets.only(right: 6), decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(4)), child: Text(s.source.toUpperCase(), style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 9, fontWeight: FontWeight.w600))),
+                  if (s.duration != null && s.duration! > 0) ...[
+                    Icon(Icons.access_time_rounded, size: 10, color: Colors.white.withValues(alpha: 0.2)),
+                    const SizedBox(width: 2),
+                    Text('${(s.duration! / 60000).floor()}:${((s.duration! % 60000) / 1000).floor().toString().padLeft(2, "0")}', style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 10)),
+                    const SizedBox(width: 8),
+                  ],
+                  Expanded(child: Text(s.artist, style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                ]),
+                trailing: _selectMode ? null : Row(mainAxisSize: MainAxisSize.min, children: [
+                  if (isPlay) const Icon(Icons.volume_up_rounded, color: Colors.pink, size: 20)
+                  else IconButton(icon: const Icon(Icons.download_rounded, color: Colors.white30, size: 22), onPressed: isDL ? null : () => _download(s), padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 36)),
+                  IconButton(icon: Icon(Icons.play_circle_outline_rounded, color: isPlay ? Colors.pink : Colors.white38, size: 22), onPressed: () => _playChartList(_chartSongs, i), padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 36)),
+                ]),
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -219,32 +640,73 @@ class _OnlineScreenState extends State<OnlineScreen> {
       final s = _results[i];
       final isPlay = _playingId == s.id;
       final isDL = _downloadingIds.contains(s.id);
-      return Container(margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4), decoration: BoxDecoration(color: isPlay ? Colors.pink.withValues(alpha: 0.1) : Colors.white.withValues(alpha: 0.03), borderRadius: BorderRadius.circular(10), border: isPlay ? Border.all(color: Colors.pink.withValues(alpha: 0.3)) : null), child: ListTile(
-        onTap: () => _playOnline(s),
-        leading: Container(width: 44, height: 44, decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), gradient: LinearGradient(colors: isPlay ? [Colors.pink.shade400, Colors.purple.shade400] : [Colors.blueGrey.shade700, Colors.blueGrey.shade800])), child: Icon(isDL ? Icons.downloading_rounded : Icons.music_note_rounded, color: Colors.white.withValues(alpha: 0.7), size: 22)),
-        title: Row(children: [
-          Expanded(child: Text(s.title, style: TextStyle(color: isPlay ? Colors.pink.shade300 : Colors.white, fontSize: 13, fontWeight: isPlay ? FontWeight.w600 : FontWeight.normal), maxLines: 1, overflow: TextOverflow.ellipsis)),
-          if (s.fee > 0) Container(margin: const EdgeInsets.only(left: 6), padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1), decoration: BoxDecoration(color: s.feeColor.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(4), border: Border.all(color: s.feeColor.withValues(alpha: 0.3))), child: Text(s.feeLabel, style: TextStyle(color: s.feeColor, fontSize: 9, fontWeight: FontWeight.w600))),
-        ]),
-        subtitle: Row(children: [
-          // 来源标签
-          Container(padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1), margin: const EdgeInsets.only(right: 6), decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(4)), child: Text(s.source.toUpperCase(), style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 9, fontWeight: FontWeight.w600))),
-          // 时长
-          if (s.duration != null && s.duration! > 0) ...[
-            Icon(Icons.access_time_rounded, size: 10, color: Colors.white.withValues(alpha: 0.2)),
-            const SizedBox(width: 2),
-            Text('${(s.duration! / 60000).floor()}:${((s.duration! % 60000) / 1000).floor().toString().padLeft(2, "0")}', style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 10)),
-            const SizedBox(width: 8),
-          ],
-          // 歌手
-          Expanded(child: Text(s.artist, style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis)),
-        ]),
-        trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-          if (isPlay) const Icon(Icons.volume_up_rounded, color: Colors.pink, size: 20)
-          else IconButton(icon: const Icon(Icons.download_rounded, color: Colors.white30, size: 22), onPressed: isDL ? null : () => _download(s), padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 36)),
-          IconButton(icon: Icon(Icons.play_circle_outline_rounded, color: isPlay ? Colors.pink : Colors.white38, size: 22), onPressed: () => _playOnline(s), padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 36)),
-        ]),
-      ));
+      final isSelected = _selectedIds.contains('${s.id}_${s.source}');
+      return GestureDetector(
+        onLongPress: () { setState(() { _selectMode = true; _selectedIds.add('${s.id}_${s.source}'); }); },
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          decoration: BoxDecoration(
+            color: isSelected ? Colors.pink.withValues(alpha: 0.1) : (isPlay ? Colors.pink.withValues(alpha: 0.08) : Colors.white.withValues(alpha: 0.03)),
+            borderRadius: BorderRadius.circular(10),
+            border: isSelected ? Border.all(color: Colors.pink.withValues(alpha: 0.4)) : (isPlay ? Border.all(color: Colors.pink.withValues(alpha: 0.3)) : null),
+          ),
+          child: ListTile(
+            onTap: _selectMode ? () {
+              setState(() {
+                final key = '${s.id}_${s.source}';
+                if (_selectedIds.contains(key)) _selectedIds.remove(key);
+                else _selectedIds.add(key);
+                if (_selectedIds.isEmpty) _selectMode = false;
+              });
+            } : () => _playOnline(s),
+            leading: Container(width: 44, height: 44, decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), gradient: LinearGradient(colors: isPlay ? [Colors.pink.shade400, Colors.purple.shade400] : [Colors.blueGrey.shade700, Colors.blueGrey.shade800])), child: Icon(isDL ? Icons.downloading_rounded : (_selectMode ? (isSelected ? Icons.check_circle : Icons.circle_outlined) : Icons.music_note_rounded), color: Colors.white.withValues(alpha: 0.7), size: 22)),
+            title: Row(children: [
+              Expanded(child: Text(s.title, style: TextStyle(color: isPlay ? Colors.pink.shade300 : Colors.white, fontSize: 13, fontWeight: isPlay ? FontWeight.w600 : FontWeight.normal), maxLines: 1, overflow: TextOverflow.ellipsis)),
+              if (s.fee > 0) Container(margin: const EdgeInsets.only(left: 6), padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1), decoration: BoxDecoration(color: s.feeColor.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(4), border: Border.all(color: s.feeColor.withValues(alpha: 0.3))), child: Text(s.feeLabel, style: TextStyle(color: s.feeColor, fontSize: 9, fontWeight: FontWeight.w600))),
+            ]),
+            subtitle: Row(children: [
+              Container(padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1), margin: const EdgeInsets.only(right: 6), decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(4)), child: Text(s.source.toUpperCase(), style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 9, fontWeight: FontWeight.w600))),
+              if (s.duration != null && s.duration! > 0) ...[
+                Icon(Icons.access_time_rounded, size: 10, color: Colors.white.withValues(alpha: 0.2)),
+                const SizedBox(width: 2),
+                Text('${(s.duration! / 60000).floor()}:${((s.duration! % 60000) / 1000).floor().toString().padLeft(2, "0")}', style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 10)),
+                const SizedBox(width: 8),
+              ],
+              Expanded(child: Text(s.artist, style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis)),
+            ]),
+            trailing: _selectMode ? null : Row(mainAxisSize: MainAxisSize.min, children: [
+              if (isPlay) const Icon(Icons.volume_up_rounded, color: Colors.pink, size: 20)
+              else IconButton(icon: const Icon(Icons.download_rounded, color: Colors.white30, size: 22), onPressed: isDL ? null : () => _download(s), padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 36)),
+              IconButton(icon: Icon(Icons.play_circle_outline_rounded, color: isPlay ? Colors.pink : Colors.white38, size: 22), onPressed: () => _playOnline(s), padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 36)),
+            ]),
+          ),
+        ),
+      );
     }));
+  }
+
+  Widget _buildDownloadBubbles() {
+    return Positioned(
+      left: 16, right: 16, bottom: 0,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: _downloadBubbles.asMap().entries.map((e) {
+          final b = e.value;
+          return Padding(
+            padding: EdgeInsets.only(bottom: e.key == 0 ? 8.0 : 0),
+            child: DownloadBubble(
+              key: b['key'],
+              title: b['title'] as String,
+              isSuccess: b['success'] as bool,
+              size: b['size'] as String?,
+              onDismiss: () {
+                if (mounted) setState(() => _downloadBubbles.remove(b));
+              },
+            ),
+          );
+        }).toList(),
+      ),
+    );
   }
 }

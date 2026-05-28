@@ -34,18 +34,13 @@ class LyricParser {
     return null;
   }
 
-  /// 在线搜索歌词（使用 LRCLIB API + 网易云 fallback）
-  static Future<List<LyricLine>> searchOnline(
-    String title,
-    String artist,
-  ) async {
-    // 尝试多种搜索方式：原歌名 → 清理后 → 括号前 → 只要歌名主体
+  /// 在线搜索歌词
+  static Future<List<LyricLine>> searchOnline(String title, String artist) async {
     final searchQueries = <String>[];
     searchQueries.add(title);
     final cleaned = _cleanTitle(title);
     if (cleaned != title && cleaned.isNotEmpty) searchQueries.add(cleaned);
-    // 取括号/破折号前的主体部分
-    final mainPart = title.split(RegExp(r'[\(（\-—]')).first.trim();
+    final mainPart = title.split(RegExp(r'[\\(（\\\\-—]')).first.trim();
     if (mainPart != title && mainPart != cleaned && mainPart.isNotEmpty) searchQueries.add(mainPart);
 
     for (final query in searchQueries) {
@@ -65,116 +60,122 @@ class LyricParser {
   static Future<List<LyricLine>> _searchLRCLIB(String title, String artist) async {
     final queryTitle = Uri.encodeComponent(_cleanTitle(title));
     final queryArtist = artist.isNotEmpty ? Uri.encodeComponent(artist) : '';
-
     final url = queryArtist.isNotEmpty
         ? 'https://lrclib.net/api/search?track_name=$queryTitle&artist_name=$queryArtist'
         : 'https://lrclib.net/api/search?track_name=$queryTitle';
-
-    final response = await http.get(Uri.parse(url), headers: {'Accept': 'application/json'}).timeout(const Duration(seconds: 8));
-    if (response.statusCode != 200) return [];
-
-    final results = jsonDecode(response.body) as List;
-    if (results.isEmpty) return [];
-    final best = results.first as Map<String, dynamic>;
-    final syncedLyrics = best['syncedLyrics'] as String?;
-    if (syncedLyrics != null && syncedLyrics.isNotEmpty) return parse(syncedLyrics);
-
-    final plainLyrics = best['plainLyrics'] as String?;
-    if (plainLyrics != null && plainLyrics.isNotEmpty) return _plainToLyric(plainLyrics);
-    return [];
+    try {
+      final resp = await http.get(Uri.parse(url), headers: {'Accept': 'application/json'}).timeout(const Duration(seconds: 8));
+      if (resp.statusCode != 200) return [];
+      final results = jsonDecode(resp.body) as List;
+      if (results.isEmpty) return [];
+      final best = results.first as Map<String, dynamic>;
+      final synced = best['syncedLyrics'] as String?;
+      if (synced != null && synced.isNotEmpty) return parse(synced);
+      final plain = best['plainLyrics'] as String?;
+      if (plain != null && plain.isNotEmpty) return _plainToLyric(plain);
+      return [];
+    } catch (_) { return []; }
   }
 
-  /// 网易云歌词搜索（用于中文歌曲）
+  /// 网易云歌词搜索
   static Future<List<LyricLine>> _searchNetease(String title, String artist) async {
-    // 先搜索获取歌曲ID
     final cleanTitle = _cleanTitle(title);
-    final searchUrl = 'https://music.163.com/api/search/get?s=${Uri.encodeComponent(cleanTitle)}&type=1&limit=5';
-    final searchResp = await http.get(Uri.parse(searchUrl), headers: {
-      'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36',
-      'Referer': 'https://music.163.com/',
-    }).timeout(const Duration(seconds: 8));
-    if (searchResp.statusCode != 200) return [];
-
-    final searchData = jsonDecode(searchResp.body);
-    final songs = searchData['result']?['songs'] as List?;
-    if (songs == null || songs.isEmpty) return [];
-
-    // 取第一个匹配结果
-    final firstId = songs.first['id'];
-    if (firstId == null) return [];
-
-    // 获取歌词
-    final lyricUrl = 'https://music.163.com/api/song/lyric?id=$firstId&lv=1&kv=1&tv=-1';
-    final lyricResp = await http.get(Uri.parse(lyricUrl), headers: {
-      'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36',
-      'Referer': 'https://music.163.com/',
-    }).timeout(const Duration(seconds: 6));
-    if (lyricResp.statusCode != 200) return [];
-
-    final lyricData = jsonDecode(lyricResp.body);
-    final lrcText = lyricData['lrc']?['lyric']?.toString();
-    if (lrcText != null && lrcText.isNotEmpty) return parse(lrcText);
-
-    final tlyric = lyricData['tlyric']?['lyric']?.toString();
-    if (tlyric != null && tlyric.isNotEmpty) return parse(tlyric);
-    return [];
+    try {
+      final searchUrl = 'https://music.163.com/api/search/get?s=${Uri.encodeComponent(cleanTitle)}&type=1&limit=5';
+      final sr = await http.get(Uri.parse(searchUrl), headers: {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36',
+        'Referer': 'https://music.163.com/',
+      }).timeout(const Duration(seconds: 8));
+      if (sr.statusCode != 200) return [];
+      final sd = jsonDecode(sr.body);
+      final songs = sd['result']?['songs'] as List?;
+      if (songs == null || songs.isEmpty) return [];
+      final firstId = songs.first['id'];
+      if (firstId == null) return [];
+      final lyricUrl = 'https://music.163.com/api/song/lyric?id=$firstId&lv=1&kv=1&tv=-1';
+      final lr = await http.get(Uri.parse(lyricUrl), headers: {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36',
+        'Referer': 'https://music.163.com/',
+      }).timeout(const Duration(seconds: 6));
+      if (lr.statusCode != 200) return [];
+      final ld = jsonDecode(lr.body);
+      final lrc = ld['lrc']?['lyric']?.toString();
+      if (lrc != null && lrc.isNotEmpty) return parse(lrc);
+      final tlrc = ld['tlyric']?['lyric']?.toString();
+      if (tlrc != null && tlrc.isNotEmpty) return parse(tlrc);
+      return [];
+    } catch (_) { return []; }
   }
 
-  /// 清理歌名（去掉多余标记），DJ歌也能匹配到原版歌词
+  /// 清理歌名（去掉多余标记）
   static String _cleanTitle(String title) {
-    return title
-        .replaceAll(RegExp(r'[\[\(].*?(?:原版|伴奏|inst|cover|live|remix|DJ|dj|版|mix|heap|伟然|默涵|版|九天|九零|heap|Heap).*?[\]\)]'), '')
-        .replaceAll(RegExp(r'[\[\(].*?[\]\)]'), '')
-        .replaceAll(RegExp(r'\s*[-–—]\s*.*$'), '')
+    // 先清理括号内的各种标记
+    String result = title
+        .replaceAll(RegExp(
+            r'[\[（(][^）\]]*?(?:原版|伴奏|inst|cover|live|remix|DJ|dj|版|'
+            r'mix|heap|伟然|默涵|九天|九零|Heap|翻唱|官方|纯净|'
+            r'人声|鼓点|Bass|Dubstep|Trap|Hardstyle|Future|浩室|'
+            r'慢摇|慢嗨|串烧|车载|重低音|低音炮|EDM|House|Techno|'
+            r'Trance|Club|Party|夜店|嗨曲|摇头|劲爆|弹跳|越南鼓|'
+            r'舞曲|电音|蹦迪|Remix|混音|DJ版|完整版|'
+            r'高音质|高品质|无损|FLAC|320K|超清)[^）\]]*[）\]]'),
+            '')
+        .replaceAll(RegExp(r'[\[（(][^）\]]*[）\]]'), '')
+        .replaceAll(RegExp(r'\s*[-–—|/]\s*.*$'), '')
         .trim();
+    return result;
   }
 
-  /// 纯文本转换为伪 LRC（每行 5 秒间隔）
+  /// 纯文本转换为伪 LRC（根据行数估算间隔）
   static List<LyricLine> _plainToLyric(String text) {
     final lines = text.split('\n').where((l) => l.trim().isNotEmpty).toList();
-    return List.generate(lines.length, (i) {
-      return LyricLine(
-        Duration(seconds: i * 5),
-        lines[i].trim(),
-      );
-    });
+    if (lines.isEmpty) return [];
+    const estimatedSec = 240;
+    final interval = (estimatedSec / lines.length).clamp(2.0, 8.0);
+    return List.generate(lines.length, (i) => LyricLine(
+      Duration(milliseconds: (i * interval * 1000).round()),
+      lines[i].trim(),
+    ));
   }
 
-  /// 解析 LRC 文本
+  /// 解析 LRC 文本（支持多种时间格式）
   static List<LyricLine> parse(String content) {
     final lines = <LyricLine>[];
-    final timeRegex = RegExp(r'\[(\d{2}):(\d{2})\.(\d{2,3})\]');
-
+    final timeRegex = RegExp(r'\[(\d{1,2})[:.](\d{2})[:.](\d{2,3})\]');
     for (final line in content.split('\n')) {
       final matches = timeRegex.allMatches(line).toList();
+      if (matches.isEmpty) continue;
       final text = line.replaceAll(timeRegex, '').trim();
-
       if (text.isEmpty) continue;
-
-      for (final match in matches) {
-        final min = int.parse(match.group(1)!);
-        final sec = int.parse(match.group(2)!);
-        var msStr = match.group(3)!;
-        if (msStr.length == 2) msStr = '${msStr}0';
-        final ms = int.parse(msStr);
-
+      for (final m in matches) {
+        final min = int.parse(m.group(1)!);
+        final sec = int.parse(m.group(2)!);
+        String ms = m.group(3)!;
+        if (ms.length == 2) ms = '${ms}0';
+        else if (ms.length > 3) ms = ms.substring(0, 3);
         lines.add(LyricLine(
-          Duration(minutes: min, seconds: sec, milliseconds: ms),
+          Duration(minutes: min, seconds: sec, milliseconds: int.parse(ms)),
           text,
         ));
       }
     }
-
     lines.sort((a, b) => a.time.compareTo(b.time));
-    return lines;
+    // 去重：连续相同文本只保留第一个
+    final deduped = <LyricLine>[];
+    for (int i = 0; i < lines.length; i++) {
+      if (i > 0 && lines[i].text == lines[i - 1].text) continue;
+      deduped.add(lines[i]);
+    }
+    return deduped;
   }
 
-  /// 根据当前播放位置找到对应的歌词行索引
-  static int findCurrentIndex(List<LyricLine> lyrics, Duration position) {
-    if (lyrics.isEmpty) return 0;
+  /// 根据播放位置找到歌词行索引（带偏移校正）
+  static int findCurrentIndex(List<LyricLine> lyrics, Duration position, [int offsetMs = 0]) {
+    if (lyrics.isEmpty) return -1;
+    final adjusted = position.inMilliseconds + offsetMs;
     for (int i = lyrics.length - 1; i >= 0; i--) {
-      if (position >= lyrics[i].time) return i;
+      if (adjusted >= lyrics[i].time.inMilliseconds) return i;
     }
-    return -1;
+    return 0;
   }
 }

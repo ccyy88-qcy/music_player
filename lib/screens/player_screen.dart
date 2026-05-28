@@ -161,6 +161,9 @@ class _PlayerScreenState extends State<PlayerScreen>
   Duration _dur = Duration.zero;
   bool _showLyrics = true;
   Timer? _sleepUi;
+  final ScrollController _lrcScrollCtrl = ScrollController();
+  bool _lrcAutoScroll = true;
+  int _lastLrcIndex = -1;
 
   late final AnimationController _eqCtrl;
   final _eqBars = List.generate(16, (_) => 0.15);
@@ -178,6 +181,11 @@ class _PlayerScreenState extends State<PlayerScreen>
     _eqCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 500))..addListener(_eq)..repeat(reverse: true);
     _rotateCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 20))..repeat();
     _bgGradCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 5))..repeat(reverse: true);
+    audioHandler.player.processingStateStream.listen((state) {
+      if (state == ProcessingState.ready || state == ProcessingState.buffering) {
+        _lastLrcIndex = -1; // 重置滚动
+      }
+    });
   }
 
   void _eq() {
@@ -194,9 +202,24 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   @override
-  void dispose() { _posSub?.cancel(); _sleepUi?.cancel(); _eqCtrl.dispose(); _rotateCtrl.dispose(); _bgGradCtrl.dispose(); super.dispose(); }
+  void dispose() { _posSub?.cancel(); _sleepUi?.cancel(); _lrcScrollCtrl.dispose(); _eqCtrl.dispose(); _rotateCtrl.dispose(); _bgGradCtrl.dispose(); super.dispose(); }
 
   String _fmt(Duration d) => '${d.inMinutes.remainder(60).toString().padLeft(2, '0')}:${d.inSeconds.remainder(60).toString().padLeft(2, '0')}';
+
+  // 自动滚动歌词到当前行
+  void _scrollToCurrentLrc(int cur, List<LyricLine> lrc) {
+    if (!_lrcAutoScroll || cur < 0 || _lastLrcIndex == cur) return;
+    _lastLrcIndex = cur;
+    // 滚动当前行到中间
+    final offset = (cur * 60.0) - (MediaQuery.of(context).size.height * 0.1) + 60;
+    if (_lrcScrollCtrl.hasClients) {
+      _lrcScrollCtrl.animateTo(
+        offset.clamp(0.0, _lrcScrollCtrl.position.maxScrollExtent),
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -204,6 +227,11 @@ class _PlayerScreenState extends State<PlayerScreen>
     final dj = s?.category == MusicCategory.dj;
     final lrc = audioHandler.lyrics;
     final lrcI = audioHandler.lyricIndex;
+
+    // 自动滚动到当前歌词
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _scrollToCurrentLrc(lrcI, lrc);
+    });
 
     return Scaffold(
       body: _PlayerParticles(
@@ -224,7 +252,6 @@ class _PlayerScreenState extends State<PlayerScreen>
               ),
               child: Stack(
                 children: [
-                  // 背景阿狸图模糊
                   Positioned.fill(
                     child: Opacity(
                       opacity: 0.08,
@@ -297,7 +324,6 @@ class _PlayerScreenState extends State<PlayerScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // 脉冲发光 + 旋转唱片
               _PulseGlow(
                 playing: playing, dj: dj,
                 child: AnimatedBuilder(
@@ -338,7 +364,6 @@ class _PlayerScreenState extends State<PlayerScreen>
                 ),
               ),
               const SizedBox(height: 20),
-              // 均衡器条
               SizedBox(
                 height: 45,
                 child: Row(
@@ -394,6 +419,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       const SizedBox(height: 20),
       Expanded(
         child: ListView.builder(
+          controller: _lrcScrollCtrl,
           padding: EdgeInsets.symmetric(vertical: MediaQuery.of(context).size.height * 0.1),
           itemCount: lrc.length,
           itemBuilder: (_, i) {
@@ -493,7 +519,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
       child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-        _ctrlBtn(Icons.repeat_rounded, 22, () { audioHandler.cyclePlayMode(); setState(() {}); }),
+        _ctrlBtn(Icons.repeat_rounded, 22, () => _showPlayModePicker(dj)),
         _ctrlBtn(Icons.skip_previous_rounded, 34, () => audioHandler.skipToPrevious()),
         StreamBuilder<bool>(
           stream: audioHandler.player.playingStream,
@@ -516,8 +542,43 @@ class _PlayerScreenState extends State<PlayerScreen>
           },
         ),
         _ctrlBtn(Icons.skip_next_rounded, 34, () => audioHandler.skipToNext()),
-        _ctrlBtn(Icons.shuffle_rounded, 22, () => audioHandler.skipToNext()),
+        _ctrlBtn(Icons.shuffle_rounded, 22, () { audioHandler.cyclePlayMode(); setState(() {}); }),
       ]),
+    );
+  }
+
+  void _showPlayModePicker(bool dj) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 8),
+              decoration: BoxDecoration(color: AppColors.textSecondary.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(2))),
+            Text('播放模式', style: TextStyle(color: AppColors.textSecondary.withValues(alpha: 0.6), fontSize: 12)),
+            const SizedBox(height: 8),
+            ...PlayMode.values.map((pm) {
+              final icons = ['→', '🔂', '🔁', '🔀'];
+              final labels = ['顺序播放', '单曲循环', '列表循环', '随机播放'];
+              final idx = pm.index;
+              final sel = audioHandler.playMode == pm;
+              return ListTile(
+                leading: Text(icons[idx], style: TextStyle(fontSize: 22)),
+                title: Text(labels[idx], style: TextStyle(color: sel ? AppColors.foxOrange : AppColors.textPrimary, fontWeight: sel ? FontWeight.bold : FontWeight.normal)),
+                trailing: sel ? const Icon(Icons.check_rounded, color: AppColors.foxOrange) : null,
+                onTap: () {
+                  while (audioHandler.playMode != pm) { audioHandler.cyclePlayMode(); }
+                  Navigator.pop(ctx);
+                  setState(() {});
+                },
+              );
+            }),
+          ]),
+        ),
+      ),
     );
   }
 
@@ -537,11 +598,97 @@ class _PlayerScreenState extends State<PlayerScreen>
   Widget _bottom(bool dj, List<LyricLine> lrc) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-        _chip(Icons.lyrics_rounded, '歌词', _showLyrics, () => setState(() => _showLyrics = !_showLyrics)),
-        _chip(Icons.equalizer_rounded, audioHandler.eqPresetLabel, audioHandler.eqPreset != EqPreset.flat, () { audioHandler.cycleEqPreset(); setState(() {}); }),
-        _chip(Icons.speed_rounded, audioHandler.speedLabel, audioHandler.speed != 1.0, () { audioHandler.cycleSpeed(); setState(() {}); }),
-        _chip(audioHandler.sleepActive ? Icons.bedtime_rounded : Icons.bedtime_outlined, audioHandler.sleepTimerLabel, audioHandler.sleepActive, () { audioHandler.cycleSleepTimer(); setState(() {}); }),
+      child: Column(children: [
+        // 第一行：歌词/EQ/速度/定时
+        Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+          _chip(Icons.lyrics_rounded, '歌词', _showLyrics, () => setState(() => _showLyrics = !_showLyrics)),
+          _chip(Icons.equalizer_rounded, audioHandler.eqPresetLabel, audioHandler.eqPreset != EqPreset.flat, () { audioHandler.cycleEqPreset(); setState(() {}); }),
+          _chip(Icons.speed_rounded, audioHandler.speedLabel, audioHandler.speed != 1.0, () { audioHandler.cycleSpeed(); setState(() {}); }),
+          _chip(audioHandler.sleepActive ? Icons.bedtime_rounded : Icons.bedtime_outlined, audioHandler.sleepTimerLabel, audioHandler.sleepActive, () { audioHandler.cycleSleepTimer(); setState(() {}); }),
+        ]),
+        // 第二行：歌词偏移调节
+        const SizedBox(height: 6),
+        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          GestureDetector(
+            onTap: () { audioHandler.adjustLyricOffset(-200); setState(() {}); },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(color: AppColors.glass, borderRadius: BorderRadius.circular(8)),
+              child: const Text('←0.2s', style: TextStyle(color: Colors.white38, fontSize: 11)),
+            ),
+          ),
+          const SizedBox(width: 6),
+          GestureDetector(
+            onTap: () { audioHandler.adjustLyricOffset(-100); setState(() {}); },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(color: AppColors.glass, borderRadius: BorderRadius.circular(8)),
+              child: const Text('←0.1s', style: TextStyle(color: Colors.white38, fontSize: 11)),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+            decoration: BoxDecoration(
+              gradient: audioHandler.lyricOffset == 0 ? null : const LinearGradient(colors: [AppColors.foxOrange, Colors.pink]),
+              color: audioHandler.lyricOffset == 0 ? AppColors.glass : null,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: audioHandler.lyricOffset == 0 ? AppColors.glassBorder : AppColors.foxOrange.withValues(alpha: 0.5)),
+            ),
+            child: Text(
+              audioHandler.lyricOffsetLabel,
+              style: TextStyle(
+                color: audioHandler.lyricOffset == 0 ? AppColors.textSecondary.withValues(alpha: 0.4) : Colors.white,
+                fontSize: 11,
+                fontWeight: audioHandler.lyricOffset == 0 ? FontWeight.normal : FontWeight.w600,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: () { audioHandler.adjustLyricOffset(100); setState(() {}); },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(color: AppColors.glass, borderRadius: BorderRadius.circular(8)),
+              child: const Text('+0.1s→', style: TextStyle(color: Colors.white38, fontSize: 11)),
+            ),
+          ),
+          const SizedBox(width: 6),
+          GestureDetector(
+            onTap: () { audioHandler.adjustLyricOffset(200); setState(() {}); },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(color: AppColors.glass, borderRadius: BorderRadius.circular(8)),
+              child: const Text('+0.2s→', style: TextStyle(color: Colors.white38, fontSize: 11)),
+            ),
+          ),
+          const SizedBox(width: 6),
+          // 自动滚动开关
+          GestureDetector(
+            onTap: () { setState(() => _lrcAutoScroll = !_lrcAutoScroll); },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: _lrcAutoScroll ? AppColors.purple.withValues(alpha: 0.2) : AppColors.glass,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(Icons.vertical_align_center_rounded,
+                color: _lrcAutoScroll ? AppColors.purple : Colors.white38, size: 16),
+            ),
+          ),
+          if (audioHandler.lyricOffset != 0) ...[
+            const SizedBox(width: 6),
+            GestureDetector(
+              onTap: () { audioHandler.resetLyricOffset(); setState(() {}); },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(color: Colors.red.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)),
+                child: const Icon(Icons.refresh_rounded, color: Colors.redAccent, size: 14),
+              ),
+            ),
+          ],
+        ]),
       ]),
     );
   }
