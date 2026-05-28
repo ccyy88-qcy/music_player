@@ -158,6 +158,8 @@ class MusicScanner {
           if (title.length > 1) {
             try {
               final stat = entity.statSync();
+              // 过滤小于800KB的文件（约1分钟以下的片段/铃声）
+              if (stat.size < 800 * 1024) continue;
               songs.add(Song(
                 title: title, artist: '', filePath: entity.path,
                 category: Song.classifySong(dirPath, name),
