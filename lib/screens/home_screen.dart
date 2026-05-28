@@ -260,7 +260,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       _localList(MusicCategory.dj, AppColors.catDJ),
       _localList(MusicCategory.pop, AppColors.catPop),
       _favView(),
-      const OnlineScreen(),
+      Column(children: [
+        _hotSection(),
+        Expanded(child: const OnlineScreen()),
+      ]),
     ]);
   }
 
@@ -411,7 +414,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       const SizedBox(height: 10), Text(isDJ ? '还没有 DJ 歌曲' : '还没有流行歌曲', style: TextStyle(color: AppColors.textMuted, fontSize: 14)),
     ]));
     return ListView(children: [
-      _hotSection(),
       _recentSection(),
       _secHeader(isDJ ? '🔥 DJ' : '🎵 流行', songs.length, colors),
       ...songs.map((s) => _songTile(s, colors, songs)),
