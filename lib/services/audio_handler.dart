@@ -4,6 +4,7 @@ import 'package:just_audio/just_audio.dart';
 import '../models/song.dart';
 import 'lyric_parser.dart';
 import 'storage_manager.dart';
+import 'package:audio_session/audio_session.dart';
 
 const _channel = MethodChannel('com.alee.music_player/service');
 const _mediaChannel = MethodChannel('com.alee.music_player/media');
@@ -23,7 +24,8 @@ class AudioPlayerHandler {
   PlayMode _playMode = PlayMode.repeatAll;
   EqPreset _eqPreset = EqPreset.flat;
   double _speed = 1.0;
-  int _lyricOffset = 0; // ms，歌词时间偏移（正数=提前显示，负数=延迟）
+  int _lyricOffset = 0;
+  int? _audioSessionId;
 
   AudioPlayer get player => _player;
   int get currentIndex => _currentIndex;
@@ -43,6 +45,7 @@ class AudioPlayerHandler {
   }
 
   AudioPlayerHandler() {
+    _initAudioSession();
     _player.playerStateStream.listen((state) {
       if (state.processingState == ProcessingState.completed) {
         if (_player.hasNext) { _currentIndex++; _lyricOffset = 0; }
@@ -69,6 +72,34 @@ class AudioPlayerHandler {
         case 'stop': _stopFg(); _player.stop(); break;
       }
     });
+  }
+
+  Future<void> _initAudioSession() async {
+    try {
+      final session = await AudioSession.instance;
+      await session.configure(const AudioSessionConfiguration(
+        avAudioSessionCategory: AVAudioSessionCategory.playback,
+        androidAudioAttributes: AndroidAudioAttributes(
+          contentType: AndroidAudioContentType.music,
+          usage: AndroidAudioUsage.media,
+        ),
+        androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
+      ));
+      _audioSessionId = session.androidAudioSessionId;
+      if (_audioSessionId != null && _audioSessionId! > 0) {
+        _applyEq(_eqPreset);
+      }
+    } catch (_) {}
+  }
+
+  void _applyEq(EqPreset preset) {
+    if (_audioSessionId == null) return;
+    try {
+      _channel.invokeMethod('setEqualizer', {
+        'preset': preset.name,
+        'sessionId': _audioSessionId,
+      });
+    } catch (_) {}
   }
 
   void _notify() {
@@ -134,7 +165,10 @@ class AudioPlayerHandler {
   String get playModeLabel => ['顺序', '单曲', '循环', '随机'][_playMode.index];
   Future<void> cycleSpeed() async { const s = [0.75, 1.0, 1.25, 1.5, 2.0]; _speed = s[(s.indexOf(_speed) + 1) % s.length]; await _player.setSpeed(_speed); }
   String get speedLabel => _speed == 1.0 ? '正常' : '${_speed}x';
-  void cycleEqPreset() => _eqPreset = EqPreset.values[(_eqPreset.index + 1) % EqPreset.values.length];
+  void cycleEqPreset() {
+    _eqPreset = EqPreset.values[(_eqPreset.index + 1) % EqPreset.values.length];
+    _applyEq(_eqPreset);
+  }
   String get eqPresetLabel => ['标准', 'DJ低音', '流行', '人声', '古典', '重低音'][_eqPreset.index];
   void cycleSleepTimer() { if (sleepActive) { cancelSleepTimer(); return; } const o = [15, 30, 60, 90]; final i = o.indexOf(_sleepRemaining ~/ 60); startSleepTimer(i < 0 || i >= o.length - 1 ? o.first : o[i + 1]); }
   void startSleepTimer(int m) { _sleepTimer?.cancel(); _sleepRemaining = m * 60; _sleepTimer = Timer.periodic(const Duration(seconds: 1), (_) { if (--_sleepRemaining <= 0) { _sleepTimer?.cancel(); _player.pause(); }}); }

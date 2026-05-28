@@ -155,6 +155,16 @@ class _OnlineScreenState extends State<OnlineScreen> with SingleTickerProviderSt
     }
     String? lrcText;
     try { lrcText = await _source!.getLyric(song); } catch (_) {}
+    // 如果没找到歌词，清理标题再试一次
+    if (lrcText == null || lrcText.isEmpty) {
+      try {
+        final cleanTitle = song.title.replaceAll(RegExp(r'\s*\(.*?\)\s*'), '').trim();
+        if (cleanTitle != song.title) {
+          final altSong = OnlineSong(id: song.id, title: cleanTitle, artist: song.artist, source: song.source, duration: song.duration);
+          lrcText = await _source!.getLyric(altSong);
+        }
+      } catch (_) {}
+    }
     audioHandler.player.stop();
     final tempSong = Song(title: song.title, artist: song.artist, filePath: playUrl, category: MusicCategory.pop);
     audioHandler.loadSongList([tempSong], startIndex: 0);
@@ -294,7 +304,7 @@ class _OnlineScreenState extends State<OnlineScreen> with SingleTickerProviderSt
       return;
     }
 
-    String? path = await DownloadManager.downloadSong(song, playUrl, '/storage/emulated/0/Download/xmp3');
+    String? path = await DownloadManager.downloadSong(song, playUrl, '/storage/emulated/0/Music/狸音乐');
     if (path == null) {
       try {
         final extDir = await getExternalStorageDirectory();
@@ -327,7 +337,7 @@ class _OnlineScreenState extends State<OnlineScreen> with SingleTickerProviderSt
     }
     if (targets.isEmpty) return;
 
-    final saveDir = '/storage/emulated/0/Download/xmp3';
+    final saveDir = '/storage/emulated/0/Music/狸音乐';
     final dir = Directory(saveDir);
     if (!dir.existsSync()) dir.createSync(recursive: true);
 

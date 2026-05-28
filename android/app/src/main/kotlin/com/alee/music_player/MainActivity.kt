@@ -3,6 +3,7 @@ package com.alee.music_player
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.audiofx.Equalizer
 import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
@@ -16,13 +17,13 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
-
     companion object {
         const val CHANNEL = "com.alee.music_player/service"
         const val MEDIA_CHANNEL = "com.alee.music_player/media"
     }
 
     private var mediaChannel: MethodChannel? = null
+    private var equalizer: Equalizer? = null
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -43,17 +44,20 @@ class MainActivity : FlutterActivity() {
                     "requestNotification" -> { requestNotificationPermission(); result.success(true) }
                     "isBatteryIgnored" -> { result.success(isBatteryIgnored()) }
                     "deleteFile" -> {
-                        val filePath = call.argument<String>("path") ?: ""
-                        val success = deleteFileViaMediaStore(filePath)
-                        result.success(success)
+                        val fp = call.argument<String>("path") ?: ""
+                        result.success(deleteFileViaMediaStore(fp))
+                    }
+                    "setEqualizer" -> {
+                        val preset = call.argument<String>("preset") ?: "flat"
+                        val sessionId = call.argument<Int>("sessionId") ?: 0
+                        setEqualizer(preset, sessionId)
+                        result.success(true)
                     }
                     else -> result.notImplemented()
                 }
             }
 
         mediaChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, MEDIA_CHANNEL)
-
-        // 请求通知权限（Android 13+必须）
         requestNotificationPermission()
     }
 
@@ -95,7 +99,7 @@ class MainActivity : FlutterActivity() {
             val pm = getSystemService(POWER_SERVICE) as PowerManager
             if (!pm.isIgnoringBatteryOptimizations(packageName)) {
                 startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                    data = Uri.parse("package:$packageName"); addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    data = Uri.parse("package:$packageName")
                 })
             }
         }
@@ -108,22 +112,43 @@ class MainActivity : FlutterActivity() {
         return try {
             val file = java.io.File(filePath)
             if (!file.exists()) return true
-            // 方法1: MediaStore 查询URI后删除
             val uri = MediaStore.Files.getContentUri("external")
             val projection = arrayOf(MediaStore.Files.FileColumns._ID)
-            val selection = MediaStore.Files.FileColumns.DATA + "=?"
-            val selectionArgs = arrayOf(filePath)
-            val cursor = contentResolver.query(uri, projection, selection, selectionArgs, null)
+            val sel = MediaStore.Files.FileColumns.DATA + "=?"
+            val cursor = contentResolver.query(uri, projection, sel, arrayOf(filePath), null)
             cursor?.use { c ->
                 while (c.moveToNext()) {
                     val id = c.getLong(0)
-                    val deleteUri = Uri.withAppendedPath(uri, id.toString())
-                    contentResolver.delete(deleteUri, null, null)
+                    contentResolver.delete(Uri.withAppendedPath(uri, id.toString()), null, null)
                     return true
                 }
             }
-            // 方法2: 直接文件删除
             file.delete()
         } catch (_: Exception) { false }
+    }
+
+    private fun setEqualizer(preset: String, sessionId: Int) {
+        try {
+            if (equalizer == null && sessionId > 0) {
+                equalizer = Equalizer(0, sessionId)
+                equalizer?.enabled = true
+            }
+            val eq = equalizer ?: return
+            val bands = eq.numberOfBands
+            if (bands < 5) return
+            // 5-band EQ settings (60Hz, 230Hz, 910Hz, 3.6kHz, 14kHz)
+            val settings = when (preset) {
+                "flat" -> shortArrayOf(0, 0, 0, 0, 0)
+                "djBass" -> shortArrayOf(800, 500, 200, 0, 0)
+                "pop" -> shortArrayOf(0, 200, 400, 300, 100)
+                "vocal" -> shortArrayOf(-200, 100, 400, 500, 300)
+                "classical" -> shortArrayOf(300, 200, 0, 200, 300)
+                "heavyBass" -> shortArrayOf(1000, 700, 300, 100, 0)
+                else -> shortArrayOf(0, 0, 0, 0, 0)
+            }
+            for (i in 0 until minOf(bands, settings.size)) {
+                eq.setBandLevel(i.toShort(), settings[i])
+            }
+        } catch (_: Exception) {}
     }
 }
