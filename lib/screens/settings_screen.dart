@@ -57,7 +57,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return const Scaffold(
         backgroundColor: AppColors.bg,
         body: Center(
-          child: CircularProgressIndicator(color: AppColors.foxOrange),
+          child: CircularProgressIndicator(color: AppColors.primary),
         ),
       );
     }
