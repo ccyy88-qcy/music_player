@@ -77,20 +77,34 @@ class FloatingOverlayService : Service() {
         }
     }
 
+    private fun resizeOverlay(widthDp: Int, heightDp: Int) {
+        val dm = resources.displayMetrics
+        val dp = dm.density
+        val w = if (widthDp == FloatingOverlayView.CIRCLE_SIZE) {
+            (FloatingOverlayView.CIRCLE_SIZE * dp).toInt()
+        } else {
+            (dm.widthPixels * FloatingOverlayView.BAR_WIDTH / 100).toInt()
+        }
+        val h = (heightDp * dp).toInt()
+        overlayLp?.let { lp ->
+            lp.width = w
+            lp.height = h
+            try { wm?.updateViewLayout(overlayView, lp) } catch (_: Exception) {}
+        }
+    }
+
     private fun createOverlay() {
         if (overlayView != null) return
 
         val dm = resources.displayMetrics
         val dp = dm.density
-
-        // 居中长方形：85%屏幕宽度，50dp高度
-        val widthPx = (dm.widthPixels * 0.85).toInt()
-        val heightPx = (50 * dp).toInt()
+        val circleSize = (FloatingOverlayView.CIRCLE_SIZE * dp).toInt()
 
         overlayView = FloatingOverlayView(this).apply {
             onPlayPause = { sendToActivity("playPause") }
             onNext = { sendToActivity("next") }
             onPrev = { sendToActivity("prev") }
+            onResize = { wDp, hDp -> resizeOverlay(wDp, hDp) }
         }
 
         val flags = (WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
@@ -98,14 +112,14 @@ class FloatingOverlayService : Service() {
                 or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN)
 
         overlayLp = WindowManager.LayoutParams(
-            widthPx,
-            heightPx,
+            circleSize,
+            circleSize,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             flags,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            y = (12 * dp).toInt() // 距顶部12dp
+            y = (12 * dp).toInt()
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
                 layoutInDisplayCutoutMode =
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
