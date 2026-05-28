@@ -66,6 +66,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     });
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      // 切到后台 → 显示悬浮窗
+      if (audioHandler.currentSong != null && audioHandler.player.playing) {
+        audioHandler.requestOverlayPermission();
+      }
+    } else if (state == AppLifecycleState.resumed) {
+      // 回到前台 → 隐藏悬浮窗
+      audioHandler.hideOverlay();
+    }
+  }
+
   Future<void> _init() async {
     _store = await StorageManager.instance;
     _recentSongs = _store?.getRecentSongs() ?? [];

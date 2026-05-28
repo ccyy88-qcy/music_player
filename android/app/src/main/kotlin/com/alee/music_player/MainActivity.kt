@@ -1,6 +1,5 @@
 package com.alee.music_player
 
-import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.audiofx.Equalizer
@@ -33,23 +32,11 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "start" -> {
-                        startMusicService(
-                            call.argument("title") ?: "狸音乐",
-                            call.argument("artist") ?: "",
-                            call.argument("playing") ?: true,
-                            (call.argument<Any>("positionMs") as? Number)?.toLong() ?: 0L,
-                            (call.argument<Any>("durationMs") as? Number)?.toLong() ?: 0L
-                        )
+                        startMusicService(call.argument("title") ?: "狸音乐", call.argument("artist") ?: "", call.argument("playing") ?: true)
                         result.success(true)
                     }
                     "update" -> {
-                        updateMusicService(
-                            call.argument("title") ?: "狸音乐",
-                            call.argument("artist") ?: "",
-                            call.argument("playing") ?: false,
-                            (call.argument<Any>("positionMs") as? Number)?.toLong() ?: 0L,
-                            (call.argument<Any>("durationMs") as? Number)?.toLong() ?: 0L
-                        )
+                        updateMusicService(call.argument("title") ?: "狸音乐", call.argument("artist") ?: "", call.argument("playing") ?: false)
                         result.success(true)
                     }
                     "stop" -> { stopMusicService(); result.success(true) }
@@ -93,10 +80,6 @@ class MainActivity : FlutterActivity() {
             MusicService.ACTION_NEXT -> mediaChannel?.invokeMethod("next", null)
             MusicService.ACTION_PREV -> mediaChannel?.invokeMethod("prev", null)
             MusicService.ACTION_STOP -> mediaChannel?.invokeMethod("stop", null)
-            MusicService.ACTION_SEEK -> {
-                val posMs = intent.getLongExtra("positionMs", 0L)
-                mediaChannel?.invokeMethod("seek", posMs)
-            }
             "playPause" -> mediaChannel?.invokeMethod("playPause", null)
             "next" -> mediaChannel?.invokeMethod("next", null)
             "prev" -> mediaChannel?.invokeMethod("prev", null)
@@ -111,19 +94,15 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun startMusicService(title: String, artist: String, playing: Boolean, positionMs: Long = 0, durationMs: Long = 0) {
+    private fun startMusicService(title: String, artist: String, playing: Boolean) {
         val intent = Intent(this, MusicService::class.java).apply {
             putExtra("title", title); putExtra("artist", artist); putExtra("playing", playing)
-            putExtra("positionMs", positionMs); putExtra("durationMs", durationMs)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent) else startService(intent)
     }
 
-    private fun updateMusicService(title: String, artist: String, playing: Boolean, positionMs: Long = 0, durationMs: Long = 0) {
-        startService(Intent(this, MusicService::class.java).apply {
-            putExtra("title", title); putExtra("artist", artist); putExtra("playing", playing)
-            putExtra("positionMs", positionMs); putExtra("durationMs", durationMs)
-        })
+    private fun updateMusicService(title: String, artist: String, playing: Boolean) {
+        startService(Intent(this, MusicService::class.java).apply { putExtra("title", title); putExtra("artist", artist); putExtra("playing", playing) })
     }
 
     private fun stopMusicService() {
