@@ -1,5 +1,6 @@
 package com.alee.music_player
 
+import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.audiofx.Equalizer
