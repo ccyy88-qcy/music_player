@@ -130,6 +130,23 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     }
   }
 
+  Widget _defaultChartCover(ChartSong s) {
+    return Container(
+      width: 120, height: 120,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        gradient: LinearGradient(
+          colors: s.rank <= 3
+              ? [AppColors.orange, AppColors.red, AppColors.yellow]
+              : [AppColors.surfaceLight, AppColors.surfaceCard],
+          begin: Alignment.topLeft, end: Alignment.bottomRight,
+        ),
+      ),
+      child: Center(child: Icon(Icons.music_note_rounded,
+        color: Colors.white.withValues(alpha: s.rank <= 3 ? 0.4 : 0.15), size: 44)),
+    );
+  }
+
   void _openPlayer() {
     if (audioHandler.currentSong == null) return;
     Navigator.push(context, PageRouteBuilder(pageBuilder: (_, __, ___) => const PlayerScreen(),
@@ -280,42 +297,37 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
                 width: 120,
                 margin: const EdgeInsets.only(right: 10),
                 child: Column(children: [
-                  // 排名封面
-                  Container(
-                    width: 120, height: 120,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      gradient: LinearGradient(
-                        colors: s.rank <= 3
-                            ? [AppColors.orange, AppColors.red, AppColors.yellow]
-                            : [AppColors.surfaceLight, AppColors.surfaceCard],
-                        begin: Alignment.topLeft, end: Alignment.bottomRight,
-                      ),
-                      boxShadow: [
-                        if (s.rank <= 3) BoxShadow(color: AppColors.orange.withValues(alpha: 0.2), blurRadius: 10),
-                      ],
-                    ),
+                  // 排名封面(真实封面图)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
                     child: Stack(children: [
-                      Center(child: Icon(
-                        Icons.music_note_rounded,
-                        color: Colors.white.withValues(alpha: s.rank <= 3 ? 0.3 : 0.1),
-                        size: 48,
-                      )),
+                      SizedBox(
+                        width: 120, height: 120,
+                        child: s.coverUrl != null && s.coverUrl!.isNotEmpty
+                            ? Image.network(s.coverUrl!, fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => _defaultChartCover(s),
+                                loadingBuilder: (_, child, progress) {
+                                  if (progress == null) return child;
+                                  return _defaultChartCover(s);
+                                },
+                              )
+                            : _defaultChartCover(s),
+                      ),
                       // 排名角标
                       Positioned(
                         top: 6, left: 6,
                         child: Container(
-                          width: 24, height: 24,
+                          width: 26, height: 26,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             color: s.rank <= 3
                                 ? (s.rank == 1 ? AppColors.yellow : (s.rank == 2 ? AppColors.orange : AppColors.red))
-                                : AppColors.textMuted.withValues(alpha: 0.3),
+                                : Colors.black.withValues(alpha: 0.5),
                           ),
                           child: Center(child: Text('${s.rank}',
                             style: TextStyle(
-                              color: s.rank <= 3 ? Colors.black : Colors.white.withValues(alpha: 0.6),
-                              fontSize: 11,
+                              color: s.rank <= 3 ? Colors.black : Colors.white,
+                              fontSize: 12,
                               fontWeight: FontWeight.w700,
                             ),
                           )),
