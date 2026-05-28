@@ -84,7 +84,7 @@ class FloatingOverlayService : Service() {
         val dm = resources.displayMetrics
         val dp = dm.density
         val width = dm.widthPixels
-        val heightPx = (180 * dp).toInt()
+        val heightPx = (60 * dp).toInt()
 
         overlayView = FloatingOverlayView(this).apply {
             onPlayPause = { sendToActivity("playPause") }

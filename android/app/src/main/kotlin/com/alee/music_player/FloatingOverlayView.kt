@@ -23,21 +23,23 @@ class FloatingOverlayView(context: Context) : View(context) {
 
     // ===== 绘制 =====
     private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val glassPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val subTextPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val btnPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val btnBgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val btnPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val progressBgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val progressPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val progressDotPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val accentGradient: LinearGradient
-    private val dividerPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
-    // 按钮区域
+    // 按钮触摸区域
     private val prevRect = RectF()
     private val playRect = RectF()
     private val nextRect = RectF()
+
+    // Path绘图
+    private val playPath = Path()
+    private val pausePath = Path()
+    private val prevPath = Path()
+    private val nextPath = Path()
 
     // 安全区域
     private var safeLeft = 0
@@ -47,15 +49,9 @@ class FloatingOverlayView(context: Context) : View(context) {
     private val dp: Float
         get() = resources.displayMetrics.density
 
-    private var rightZoneStart = 0f
-
     init {
-        // 深色玻璃背景
         bgPaint.color = Color.parseColor("#CC121218")
 
-        glassPaint.color = Color.parseColor("#0AFFFFFF")
-
-        // 渐变强调色 (AppColors.orange -> purple)
         accentGradient = LinearGradient(
             0f, 0f, 0f, 0f,
             Color.parseColor("#FF6B35"),
@@ -64,36 +60,27 @@ class FloatingOverlayView(context: Context) : View(context) {
         )
 
         textPaint.color = Color.parseColor("#F0F0F5")
-        textPaint.textSize = 14 * dp
         textPaint.isAntiAlias = true
 
-        subTextPaint.color = Color.parseColor("#88889A")
-        subTextPaint.textSize = 10 * dp
-        subTextPaint.isAntiAlias = true
-
-        btnPaint.color = Color.parseColor("#F0F0F5")
+        btnBgPaint.isAntiAlias = true
         btnPaint.isAntiAlias = true
         btnPaint.style = Paint.Style.FILL
-
-        btnBgPaint.color = Color.parseColor("#14FFFFFF")
-        btnBgPaint.isAntiAlias = true
 
         progressBgPaint.color = Color.parseColor("#1A555566")
         progressBgPaint.strokeCap = Paint.Cap.ROUND
         progressPaint.strokeCap = Paint.Cap.ROUND
-        progressDotPaint.isAntiAlias = true
-
-        dividerPaint.color = Color.parseColor("#12FFFFFF")
-        dividerPaint.strokeWidth = 0.5f * dp
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        accentGradient.setLocalMatrix(Matrix().apply { setRectToRect(RectF(0f, 0f, w.toFloat(), h.toFloat()), RectF(0f, 0f, w.toFloat(), h.toFloat()), Matrix.ScaleToFit.FILL) })
+        accentGradient.setLocalMatrix(Matrix().apply {
+            setRectToRect(RectF(0f, 0f, w.toFloat(), h.toFloat()),
+                RectF(0f, 0f, w.toFloat(), h.toFloat()), Matrix.ScaleToFit.FILL)
+        })
 
-        val btnSize = 36 * dp
-        val gap = 8 * dp
-        val rightMargin = (safeRight.coerceAtMost(w - 12)).toFloat()
+        val btnSize = 32 * dp
+        val gap = 4 * dp
+        val rightMargin = w.toFloat() - 8 * dp
         var rx = rightMargin - btnSize
         nextRect.set(rx, (h - btnSize) / 2f, rx + btnSize, (h + btnSize) / 2f)
         rx -= (btnSize + gap)
@@ -101,7 +88,49 @@ class FloatingOverlayView(context: Context) : View(context) {
         rx -= (btnSize + gap)
         prevRect.set(rx, (h - btnSize) / 2f, rx + btnSize, (h + btnSize) / 2f)
 
-        rightZoneStart = prevRect.left - 4 * dp
+        // 构建按钮Path（居中显示）
+        _buildBtnPaths(btnSize)
+    }
+
+    private fun _buildBtnPaths(size: Float) {
+        val half = size / 2f
+        val triSize = size * 0.3f
+        val midH = triSize * 0.5f
+
+        // 上一首：两个向左三角
+        prevPath.reset()
+        for (i in 0..1) {
+            val ox = -triSize * 0.7f + i * (triSize * 0.8f)
+            prevPath.moveTo(half + ox, half - midH)
+            prevPath.lineTo(half + ox - triSize, half)
+            prevPath.lineTo(half + ox, half + midH)
+            prevPath.close()
+        }
+
+        // 下一首：两个向右三角
+        nextPath.reset()
+        for (i in 0..1) {
+            val ox = triSize * 1.2f - i * (triSize * 0.8f)
+            nextPath.moveTo(half - ox, half - midH)
+            nextPath.lineTo(half - ox + triSize, half)
+            nextPath.lineTo(half - ox, half + midH)
+            nextPath.close()
+        }
+
+        // 播放：三角
+        playPath.reset()
+        playPath.moveTo(half - triSize * 0.4f, half - triSize * 0.55f)
+        playPath.lineTo(half + triSize * 0.6f, half)
+        playPath.lineTo(half - triSize * 0.4f, half + triSize * 0.55f)
+        playPath.close()
+
+        // 暂停：两条竖杠
+        val barW = triSize * 0.3f
+        val barH = triSize * 0.6f
+        val barGap = triSize * 0.2f
+        pausePath.reset()
+        pausePath.addRect(half - barGap - barW, half - barH, half - barGap, half + barH, Path.Direction.CW)
+        pausePath.addRect(half + barGap, half - barH, half + barGap + barW, half + barH, Path.Direction.CW)
     }
 
     override fun onApplyWindowInsets(insets: WindowInsets): WindowInsets {
@@ -133,89 +162,78 @@ class FloatingOverlayView(context: Context) : View(context) {
         // ── 背景 ──
         canvas.drawRect(0f, 0f, w, h, bgPaint)
 
-        // 底部细线
-        canvas.drawRect(0f, h - d, w, h, glassPaint)
-
-        // 分隔线（progress上面
-        dividerPaint.strokeWidth = d * 0.3f
-        canvas.drawLine(0f, h - 5 * d, w, h - 5 * d, dividerPaint)
-
-        // ── 进度条 ──
-        val progressH = 3 * d
-        val progressY = h - 2.5f * d
-        val progressW = w - (safeLeft + safeRight).coerceAtMost(0)
-        val progressX = safeLeft.toFloat()
-
-        progressBgPaint.strokeWidth = 2 * d
-        canvas.drawLine(progressX, progressY, progressX + progressW, progressY, progressBgPaint)
+        // ── 底部进度条（细线） ──
+        val progressY = h - 2 * d
+        progressBgPaint.strokeWidth = 1.5f * d
+        canvas.drawLine(0f, progressY, w, progressY, progressBgPaint)
 
         val fraction = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
         if (fraction > 0) {
             progressPaint.shader = accentGradient
-            progressPaint.strokeWidth = 2 * d
-            canvas.drawLine(progressX, progressY, progressX + progressW * fraction, progressY, progressPaint)
+            progressPaint.strokeWidth = 1.5f * d
+            canvas.drawLine(0f, progressY, w * fraction, progressY, progressPaint)
             progressPaint.shader = null
-            // 小圆点
-            val dotX = progressX + progressW * fraction
-            progressDotPaint.color = Color.parseColor("#FF6B35")
-            canvas.drawCircle(dotX, progressY, 3.5f * d, progressDotPaint)
-            progressDotPaint.color = Color.parseColor("#30FF6B35")
-            canvas.drawCircle(dotX, progressY, 7f * d, progressDotPaint)
         }
 
-        // ── 左侧：封面占位 + 文字 ──
-        val leftEdge = safeLeft.coerceAtLeast(12).toFloat() + 8 * d
-        val artSize = 32 * d
+        // ── 左侧：封面圆 + 歌名 ──
+        val leftEdge = (safeLeft + 6).coerceAtLeast(6).toFloat() * d
+        val artSize = 28 * d
         val artY = (h - artSize) / 2f
+        val artCx = leftEdge + artSize / 2
+        val artCy = artY + artSize / 2
 
-        // 封面占位圆
+        // 封面圆
         btnBgPaint.color = Color.parseColor("#1AFF6B35")
-        canvas.drawCircle(leftEdge + artSize / 2, artY + artSize / 2, artSize / 2, btnBgPaint)
-        btnPaint.textSize = 16 * d
-        canvas.drawText("♫", leftEdge + artSize / 2 - 6 * d, artY + artSize / 2 + 5 * d, btnPaint)
+        canvas.drawCircle(artCx, artCy, artSize / 2, btnBgPaint)
+        // 音符图标（用Path画）
+        btnPaint.color = Color.parseColor("#F0F0F5")
+        btnPaint.strokeWidth = 1.5f * d
+        btnPaint.style = Paint.Style.STROKE
+        _drawNote(canvas, artCx, artCy, artSize * 0.3f, d)
+        btnPaint.style = Paint.Style.FILL
 
-        // 标题 (带省略)
-        val titleX = leftEdge + artSize + 12 * d
-        val maxTitleW = rightZoneStart - titleX - 8 * d
-        textPaint.textSize = 14 * d
+        // 歌名
+        val titleX = leftEdge + artSize + 8 * d
+        val maxTitleW = prevRect.left - titleX - 4 * d
+        textPaint.textSize = 12 * d
         val displayTitle = if (textPaint.measureText(title) > maxTitleW) {
-            // 省略
             var t = title
-            while (textPaint.measureText("$t…") > maxTitleW && t.length > 1) t = t.substring(0, t.length - 1)
+            while (textPaint.measureText("$t…") > maxTitleW && t.length > 1)
+                t = t.substring(0, t.length - 1)
             "$t…"
         } else title
-        canvas.drawText(displayTitle, titleX, artY + artSize / 2 + d, textPaint)
+        canvas.drawText(displayTitle, titleX, artCy + 4 * d, textPaint)
 
-        // ── 右侧控制按钮 ──
+        // ── 右侧控制按钮（圆形背景 + Path图标） ──
+        val btnRadius = nextRect.width() / 2f
+
         // 上一首
-        _drawPlaybackIcon(canvas, prevRect, "◀◀", 12 * d)
-        // 播放/暂停
-        _drawPlayBtn(canvas, playRect, isPlaying)
-        // 下一首
-        _drawPlaybackIcon(canvas, nextRect, "▶▶", 12 * d)
-    }
-
-    private fun _drawPlayBtn(canvas: Canvas, rect: RectF, playing: Boolean) {
-        btnBgPaint.color = Color.parseColor("#1AFF6B35")
-        canvas.drawCircle(rect.centerX(), rect.centerY(), rect.width() / 2f, btnBgPaint)
-        btnPaint.color = Color.parseColor("#F0F0F5")
-        btnPaint.textSize = rect.width() * 0.45f
-        val icon = if (playing) "⏸" else "▶"
-        canvas.drawText(icon,
-            rect.centerX() - btnPaint.measureText(icon) / 2f,
-            rect.centerY() + btnPaint.textSize * 0.35f,
-            btnPaint)
-    }
-
-    private fun _drawPlaybackIcon(canvas: Canvas, rect: RectF, icon: String, textSize: Float) {
         btnBgPaint.color = Color.parseColor("#0AFFFFFF")
-        canvas.drawCircle(rect.centerX(), rect.centerY(), rect.width() / 2f, btnBgPaint)
-        btnPaint.color = Color.parseColor("#C0F0F0F5")
-        btnPaint.textSize = textSize
-        canvas.drawText(icon,
-            rect.centerX() - btnPaint.measureText(icon) / 2f,
-            rect.centerY() + btnPaint.textSize * 0.35f,
-            btnPaint)
+        canvas.drawCircle(prevRect.centerX(), prevRect.centerY(), btnRadius, btnBgPaint)
+        btnPaint.color = Color.parseColor("#D0F0F0F5")
+        canvas.drawPath(prevPath, btnPaint)
+
+        // 播放/暂停（实心高亮）
+        btnBgPaint.color = Color.parseColor("#1AFF6B35")
+        canvas.drawCircle(playRect.centerX(), playRect.centerY(), btnRadius, btnBgPaint)
+        btnPaint.color = Color.parseColor("#F0F0F5")
+        canvas.drawPath(if (isPlaying) pausePath else playPath, btnPaint)
+
+        // 下一首
+        btnBgPaint.color = Color.parseColor("#0AFFFFFF")
+        canvas.drawCircle(nextRect.centerX(), nextRect.centerY(), btnRadius, btnBgPaint)
+        btnPaint.color = Color.parseColor("#D0F0F0F5")
+        canvas.drawPath(nextPath, btnPaint)
+    }
+
+    private fun _drawNote(canvas: Canvas, cx: Float, cy: Float, size: Float, d: Float) {
+        val path = Path()
+        path.moveTo(cx - size * 0.3f, cy - size * 0.5f)
+        path.lineTo(cx + size * 0.5f, cy - size * 0.8f)
+        path.lineTo(cx + size * 0.5f, cy + size * 0.2f)
+        canvas.drawPath(path, btnPaint)
+        canvas.drawCircle(cx - size * 0.3f, cy + size * 0.2f, size * 0.2f, btnPaint)
+        canvas.drawCircle(cx + size * 0.5f, cy + size * 0.2f, size * 0.2f, btnPaint)
     }
 
     // ── 触摸事件 ──
