@@ -70,9 +70,24 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     _store = await StorageManager.instance;
     _recentSongs = _store?.getRecentSongs() ?? [];
     _scanMode = _store!.scanMode;
+
+    // 先加载缓存显示数据，避免白屏
+    final cached = _store!.loadSongCache();
+    if (cached.isNotEmpty) {
+      final byCat = <MusicCategory, List<Song>>{};
+      for (final s in cached.values) {
+        byCat.putIfAbsent(s.category, () => []).add(s);
+      }
+      if (mounted) setState(() { _allSongs = byCat; _filteredSongs = Map.from(byCat); _loading = false; });
+    }
+
     if (!await MusicScanner.hasPermission()) {
-      setState(() { _loading = false; _permissionDenied = true; _error = '需要存储权限'; });
-      return;
+      // 自动弹出授权
+      final granted = await MusicScanner.requestPermission();
+      if (!granted) {
+        if (mounted) setState(() { _loading = false; _permissionDenied = true; });
+        return;
+      }
     }
     _scanMusic();
   }
