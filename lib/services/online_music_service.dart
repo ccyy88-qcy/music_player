@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../models/song.dart';
 import 'storage_manager.dart';
+import 'netease_crypto.dart';
 
 class OnlineSong {
   final String id, title, artist, album, source;
@@ -132,7 +133,38 @@ class NeteaseSource extends MusicSource {
   }
 
   @override Future<String?> getPlayUrl(OnlineSong song) async {
-    // 1. enhance API (免费歌直接返回CDN)
+    // 1. EAPI加密调用（成功率最高，支持320k无损）
+    try {
+      final path = '/api/song/enhance/player/url/v1';
+      final body = jsonEncode({
+        'ids': jsonEncode([song.id]),
+        'level': 'exhigh',
+        'encodeType': 'mp3',
+      });
+      final params = eapiEncrypt(path, body);
+      final resp = await http.post(
+        Uri.parse('https://interface.music.163.com/eapi/song/enhance/player/url/v1'),
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36',
+          'Referer': 'https://music.163.com/',
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Cookie': 'NMTID=00OKlEq2nVNMgNF05CFI1JjHgQehWAAAQJZovaw',
+        },
+        body: {'params': params},
+      ).timeout(const Duration(seconds: 8));
+      if (resp.statusCode == 200) {
+        final d = jsonDecode(resp.body);
+        final data = d['data'] as List?;
+        if (data != null && data.isNotEmpty) {
+          final urlStr = data[0]['url'];
+          if (urlStr != null && urlStr.toString().startsWith('http')) {
+            return urlStr.toString().split('?')[0];
+          }
+        }
+      }
+    } catch (_) {}
+
+    // 2. 降级：公共enhance API
     try {
       final url = 'https://music.163.com/api/song/enhance/player/url?id=${song.id}&ids=%5B${song.id}%5D&br=320000';
       final resp = await http.get(Uri.parse(url), headers: _h()).timeout(const Duration(seconds: 5));
@@ -146,7 +178,7 @@ class NeteaseSource extends MusicSource {
       }
     } catch (_) {}
 
-    // 2. outer/url + 解析重定向
+    // 3. outer/url + 重定向解析
     try {
       final outerUrl = 'https://music.163.com/song/media/outer/url?id=${song.id}.mp3';
       final resolved = await _resolveRedirect(outerUrl);
@@ -360,7 +392,25 @@ class AggregateSource extends MusicSource {
       if (s.key == song.source) continue;
       try { final u = await s.getPlayUrl(song); if (u != null && u.startsWith('http')) return u; } catch (_) {}
     }
-    // 3. 跨源搜索同名歌曲（VIP降级）
+    // 3. 同源搜索免费替代（VIP歌曲找cover/free版本）
+    if (song.fee > 0) {
+      final sameSrc = _srcMap[song.source];
+      if (sameSrc != null) {
+        try {
+          final results = await sameSrc.search('${song.title} ${song.artist}', limit: 10);
+          for (final alt in results) {
+            if (alt.fee == 0 && alt.id != song.id) {
+              try {
+                final u = await sameSrc.getPlayUrl(alt);
+                if (u != null && u.startsWith('http')) return u;
+              } catch (_) {}
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
+    // 4. 跨源搜索同名歌曲
     try {
       final others = _srcs.where((s) => s.key != song.source).toList();
       for (final s in others) {
