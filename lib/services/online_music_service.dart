@@ -329,6 +329,157 @@ class KugouSource extends MusicSource {
   }
 }
 
+/// ========== 酷我音乐 API ==========
+class KuwoSource extends MusicSource {
+  @override String get name => '酷我';
+  @override String get key => 'kuwo';
+
+  @override Future<List<OnlineSong>> search(String keyword, {int page = 1, int limit = 20}) async {
+    final url = 'http://search.kuwo.cn/r.s?all=${Uri.encodeComponent(keyword)}&ft=music&itemset=web_2013&pn=${page - 1}&rn=$limit&rformat=json&encoding=utf8&client=kt';
+    try {
+      final resp = await http.get(Uri.parse(url), headers: {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36',
+        'Referer': 'http://kuwo.cn/',
+      }).timeout(const Duration(seconds: 10));
+      if (resp.statusCode != 200) return [];
+      final raw = resp.body.replaceFirst('MUSIC_', ''); // 有时返回JSONP
+      final d = jsonDecode(raw);
+      final list = d['abslist'] as List?;
+      if (list == null || list.isEmpty) return [];
+      return list.map((s) {
+        final rid = (s['MUSICRID'] ?? '').toString().replaceFirst('MUSIC_', '');
+        return OnlineSong(
+          id: rid, title: s['SONGNAME'] ?? '', artist: s['ARTIST'] ?? '',
+          album: s['ALBUM'] ?? '', coverUrl: s['web_albumpic_short'] != null ? 'http://img.kuwo.cn/star/albumcover/${s["web_albumpic_short"]}' : null,
+          source: 'kuwo', fee: 0,
+        );
+      }).toList();
+    } catch (_) { return []; }
+  }
+
+  @override Future<String?> getPlayUrl(OnlineSong song) async {
+    // 酷我反防盗链地址解析
+    try {
+      final url = 'http://antiserver.kuwo.cn/anti.s?type=convert_url&rid=MUSIC_${song.id}&format=mp3';
+      final resp = await http.get(Uri.parse(url), headers: {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36',
+        'Referer': 'http://kuwo.cn/',
+      }).timeout(const Duration(seconds: 8));
+      if (resp.statusCode == 200) {
+        final body = resp.body.trim();
+        if (body.startsWith('http')) return body;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  @override Future<String?> getLyric(OnlineSong song) async {
+    try {
+      final url = 'http://m.kuwo.cn/newh5/singles/songinfoandlrc?musicId=${song.id}';
+      final resp = await http.get(Uri.parse(url), headers: {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36',
+        'Referer': 'http://kuwo.cn/',
+      }).timeout(const Duration(seconds: 6));
+      if (resp.statusCode == 200) {
+        final d = jsonDecode(resp.body);
+        final lrcList = d['data']?['lrclist'] as List?;
+        if (lrcList != null && lrcList.isNotEmpty) {
+          return lrcList.map((l) {
+            final t = (l['time'] as num?)?.toDouble() ?? 0.0;
+            final min = (t / 60).floor();
+            final sec = (t % 60).toStringAsFixed(2).padLeft(5, '0');
+            return '[$min:$sec]${l["lineLyric"]}';
+          }).join('\n');
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+}
+
+/// ========== 咪咕音乐 API ==========
+class MiguSource extends MusicSource {
+  @override String get name => '咪咕';
+  @override String get key => 'migu';
+
+  @override Future<List<OnlineSong>> search(String keyword, {int page = 1, int limit = 20}) async {
+    final url = 'https://m.music.migu.cn/migu/remoting/scr_search_tag?keyword=${Uri.encodeComponent(keyword)}&pgc=$page&rows=$limit&type=2';
+    try {
+      final resp = await http.get(Uri.parse(url), headers: {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36',
+        'Referer': 'https://m.music.migu.cn/',
+      }).timeout(const Duration(seconds: 10));
+      if (resp.statusCode != 200) return [];
+      final d = jsonDecode(resp.body);
+      final list = d['musics'] as List? ?? d['result'] as List?;
+      if (list == null || list.isEmpty) return [];
+      return list.map((s) {
+        final sMap = s is Map ? s : {};
+        final songId = (sMap['id'] ?? sMap['songId'] ?? '').toString();
+        final copyrightId = (sMap['copyrightId'] ?? '').toString();
+        final id = copyrightId.isNotEmpty ? copyrightId : songId;
+        final artists = sMap['singerName'] ?? sMap['artist'] ?? '';
+        return OnlineSong(
+          id: id, title: sMap['name'] ?? sMap['songName'] ?? '',
+          artist: artists.toString(),
+          album: sMap['albumName'] ?? sMap['album'] ?? '',
+          coverUrl: sMap['cover']?.toString().replaceAll('{size}', '300') ?? sMap['albumPic']?.toString(),
+          source: 'migu', duration: (sMap['duration'] as int?) ?? (sMap['length'] as int?),
+        );
+      }).toList();
+    } catch (_) { return []; }
+  }
+
+  @override Future<String?> getPlayUrl(OnlineSong song) async {
+    // 咪咕APP接口获取播放地址
+    try {
+      final url = 'https://app.pd.nf.migu.cn/MIGUM3.0/v1.0/content/sub/listenSong.do?toneFlag=HQ&songId=${song.id}';
+      final resp = await http.get(Uri.parse(url), headers: {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36',
+        'Referer': 'https://app.pd.nf.migu.cn/',
+      }).timeout(const Duration(seconds: 8));
+      if (resp.statusCode == 200) {
+        final d = jsonDecode(resp.body);
+        final playUrl = d['data']?['playUrl']?.toString();
+        if (playUrl != null && playUrl.startsWith('http')) return playUrl;
+      }
+    } catch (_) {}
+
+    // 降级：MiguWeb接口
+    try {
+      final url = 'https://c.musicapp.migu.cn/MIGUM2.0/v1.0/content/resource/listen.do?copyrightId=${song.id}&netType=01';
+      final resp = await http.get(Uri.parse(url), headers: {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36',
+        'Referer': 'https://music.migu.cn/',
+      }).timeout(const Duration(seconds: 8));
+      if (resp.statusCode == 200) {
+        final d = jsonDecode(resp.body);
+        final resource = d['resource'] as List?;
+        if (resource != null && resource.isNotEmpty) {
+          final urlStr = resource[0]['playUrl']?.toString();
+          if (urlStr != null && urlStr.startsWith('http')) return urlStr;
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  @override Future<String?> getLyric(OnlineSong song) async {
+    try {
+      final url = 'https://music.migu.cn/v3/api/music/audioPlayer/getLyric?copyrightId=${song.id}';
+      final resp = await http.get(Uri.parse(url), headers: {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36',
+        'Referer': 'https://music.migu.cn/',
+      }).timeout(const Duration(seconds: 6));
+      if (resp.statusCode == 200) {
+        final d = jsonDecode(resp.body);
+        return d['lyric']?.toString();
+      }
+    } catch (_) {}
+    return null;
+  }
+}
+
 /// ========== 自定义 API 源 ==========
 class CustomApiSource extends MusicSource {
   final String _name, _searchUrl, _playUrl, _lyricUrl;
@@ -360,7 +511,7 @@ class CustomApiSource extends MusicSource {
 Future<MusicSource> getMusicSourceAsync() async {
   final store = await storage;
   final custom = store.getMusicSources();
-  final srcs = <MusicSource>[NeteaseSource(), QQSource(), KugouSource()];
+  final srcs = <MusicSource>[NeteaseSource(), QQSource(), KugouSource(), KuwoSource(), MiguSource()];
   for (final s in custom) { srcs.add(CustomApiSource(name: s['name'] ?? '自定义', searchUrl: '${s['url']}/search?key={keyword}&page={page}&limit={limit}', playUrl: '${s['url']}/url?id={id}', lyricUrl: '${s['url']}/lyric?id={id}')); }
   return AggregateSource(srcs);
 }
