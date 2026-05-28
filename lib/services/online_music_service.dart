@@ -225,7 +225,7 @@ class QQSource extends MusicSource {
       final guid = DateTime.now().millisecondsSinceEpoch % 1000000000;
       final data = jsonEncode({'req_0': {'module': 'vkey.GetVkeyServer', 'method': 'CgiGetVkey', 'param': {'guid': guid.toString(), 'songmid': [song.id], 'songtype': [0], 'uin': '0', 'loginflag': 1, 'platform': '20'}}});
       final url = 'https://u.y.qq.com/cgi-bin/musicu.fcg?format=json&data=${Uri.encodeComponent(data)}';
-      final resp = await http.get(Uri.parse(url), headers: _hQQ()).timeout(const Duration(seconds: 5));
+      final resp = await http.get(Uri.parse(url), headers: _h()).timeout(const Duration(seconds: 5));
       if (resp.statusCode == 200) {
         final d = jsonDecode(resp.body);
         final midurlinfo = d['req_0']?['data']?['midurlinfo'] as List?;
@@ -233,9 +233,8 @@ class QQSource extends MusicSource {
           final purl = midurlinfo[0]['purl']?.toString();
           if (purl != null && purl.isNotEmpty) return 'http://ws.stream.qqmusic.qq.com/$purl';
         }
-      } catch (e) {
-      // QQ获取播放地址失败: $e
-    }
+      }
+    } catch (_) {}
     return null;
   }
 
@@ -296,9 +295,8 @@ class KugouSource extends MusicSource {
         final d = jsonDecode(resp.body);
         final playUrl = d['data']?['play_url']?.toString();
         if (playUrl != null && playUrl.startsWith('http')) return playUrl;
-      } catch (e) {
-      // QQ获取播放地址失败: $e
-    }
+      }
+    } catch (_) {}
     return null;
   }
 
@@ -405,9 +403,8 @@ class AggregateSource extends MusicSource {
             if (u != null && u.startsWith('http')) return u;
           } catch (_) {}
         }
-      } catch (e) {
-      // QQ获取播放地址失败: $e
-    }
+      }
+    } catch (_) {}
     return null;
   }
 
