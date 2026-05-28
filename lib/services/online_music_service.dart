@@ -451,7 +451,8 @@ class DownloadManager {
         if (bytes.length > 4) {
           final isAudio = (bytes[0] == 0x49 && bytes[1] == 0x44 && bytes[2] == 0x33) ||
               (bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0) ||
-              (bytes[0] == 0x66 && bytes[1] == 0x4C && bytes[2] == 0x61 && bytes[3] == 0x43);
+              (bytes[0] == 0x66 && bytes[1] == 0x4C && bytes[2] == 0x61 && bytes[3] == 0x43) ||
+              (bytes.length > 8 && bytes[4] == 0x66 && bytes[5] == 0x74 && bytes[6] == 0x79 && bytes[7] == 0x70);
           if (!isAudio) return null;
         }
         await File(path).writeAsBytes(bytes);
