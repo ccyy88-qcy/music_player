@@ -17,6 +17,9 @@ class AppColors {
   static const green = Color(0xFF22C55E);
   static const yellow = Color(0xFFEAB308);
   static const red = Color(0xFFEF4444);
+  static const success = Color(0xFF22C55E);
+  static const warning = Color(0xFFEAB308);
+  static const error = Color(0xFFEF4444);
 
   // 背景
   static const bg = Color(0xFF0A0A0F);
