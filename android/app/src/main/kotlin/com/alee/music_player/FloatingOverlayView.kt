@@ -22,7 +22,7 @@ class FloatingOverlayView(context: Context) : View(context) {
     var onPlayPause: (() -> Unit)? = null
     var onNext: (() -> Unit)? = null
     var onPrev: (() -> Unit)? = null
-    var onResize: ((widthDp: Int, heightDp: Int) -> Unit)? = null
+    var onResize: ((widthDp: Int, heightDp: Int, yOffsetDp: Int) -> Unit)? = null
 
     var collapsed = true
     private val handler = Handler(Looper.getMainLooper())
