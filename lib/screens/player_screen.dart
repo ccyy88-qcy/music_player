@@ -269,7 +269,7 @@ class _PlayerScreenState extends State<PlayerScreen> with TickerProviderStateMix
         itemBuilder: (_, i) {
           final isCur = i == cur;
           final textStyle = TextStyle(
-            color: isCur ? colors[0] : AppColors.textSecondary.withValues(alpha: 0.15),
+            color: isCur ? colors[0] : AppColors.textSecondary.withValues(alpha: 0.55),
             fontSize: isCur ? 21 : 14,
             fontWeight: isCur ? FontWeight.bold : FontWeight.normal,
             height: 1.5,
@@ -279,7 +279,7 @@ class _PlayerScreenState extends State<PlayerScreen> with TickerProviderStateMix
           // 卡拉OK模式：平滑渐变染色
           if (isCur && _karaokeMode && _lrcProgress > 0) {
             final highlightColor = colors[0];
-            final dimColor = AppColors.textSecondary.withValues(alpha: 0.15);
+            final dimColor = AppColors.textSecondary.withValues(alpha: 0.55);
             final midColor = Color.lerp(highlightColor, dimColor, 0.5)!;
             final progress = _lrcProgress.clamp(0.0, 1.0);
 
@@ -339,7 +339,7 @@ class _PlayerScreenState extends State<PlayerScreen> with TickerProviderStateMix
           // 上一行(淡出)
           if (prev.isNotEmpty) Padding(
             padding: const EdgeInsets.only(bottom: 20),
-            child: Text(prev, style: TextStyle(color: AppColors.textSecondary.withValues(alpha: 0.12), fontSize: 15, height: 1.4),
+            child: Text(prev, style: TextStyle(color: AppColors.textSecondary.withValues(alpha: 0.45), fontSize: 15, height: 1.4),
               textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis),
           ),
           // 当前行(大号, 卡拉OK渐变)
@@ -348,8 +348,8 @@ class _PlayerScreenState extends State<PlayerScreen> with TickerProviderStateMix
               begin: Alignment.centerLeft, end: Alignment.centerRight,
               colors: [
                 colors[0], colors[0],
-                AppColors.textSecondary.withValues(alpha: 0.15),
-                AppColors.textSecondary.withValues(alpha: 0.15),
+                AppColors.textSecondary.withValues(alpha: 0.45),
+                AppColors.textSecondary.withValues(alpha: 0.45),
               ],
               stops: [0.0, (progress - 0.1).clamp(0.0, 1.0), progress.clamp(0.0, 1.0), 1.0],
             ).createShader(bounds),
@@ -360,7 +360,7 @@ class _PlayerScreenState extends State<PlayerScreen> with TickerProviderStateMix
           // 下一行(淡入)
           if (next.isNotEmpty) Padding(
             padding: const EdgeInsets.only(top: 20),
-            child: Text(next, style: TextStyle(color: AppColors.textSecondary.withValues(alpha: 0.12), fontSize: 15, height: 1.4),
+            child: Text(next, style: TextStyle(color: AppColors.textSecondary.withValues(alpha: 0.45), fontSize: 15, height: 1.4),
               textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis),
           ),
         ]),

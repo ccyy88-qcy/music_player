@@ -20,6 +20,7 @@ class MainActivity : FlutterActivity() {
     companion object {
         const val CHANNEL = "com.alee.music_player/service"
         const val MEDIA_CHANNEL = "com.alee.music_player/media"
+        const val OVERLAY_CHANNEL = "com.alee.music_player/overlay"
     }
 
     private var mediaChannel: MethodChannel? = null
@@ -32,11 +33,23 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "start" -> {
-                        startMusicService(call.argument("title") ?: "狸音乐", call.argument("artist") ?: "", call.argument("playing") ?: true)
+                        startMusicService(
+                            call.argument("title") ?: "狸音乐",
+                            call.argument("artist") ?: "",
+                            call.argument("playing") ?: true,
+                            call.argument("positionMs") ?: 0,
+                            call.argument("durationMs") ?: 0
+                        )
                         result.success(true)
                     }
                     "update" -> {
-                        updateMusicService(call.argument("title") ?: "狸音乐", call.argument("artist") ?: "", call.argument("playing") ?: false)
+                        updateMusicService(
+                            call.argument("title") ?: "狸音乐",
+                            call.argument("artist") ?: "",
+                            call.argument("playing") ?: false,
+                            call.argument("positionMs") ?: 0,
+                            call.argument("durationMs") ?: 0
+                        )
                         result.success(true)
                     }
                     "stop" -> { stopMusicService(); result.success(true) }
@@ -57,6 +70,18 @@ class MainActivity : FlutterActivity() {
                 }
             }
 
+        // 悬浮窗通道
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, OVERLAY_CHANNEL)
+            .setMethodCallHandler { call, _ ->
+                when (call.method) {
+                    "show" -> showOverlay(call)
+                    "hide" -> hideOverlay()
+                    "update" -> updateOverlay(call)
+                    "requestOverlay" -> requestOverlayPermission()
+                    else -> {}
+                }
+            }
+
         mediaChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, MEDIA_CHANNEL)
         requestNotificationPermission()
     }
@@ -68,6 +93,13 @@ class MainActivity : FlutterActivity() {
             MusicService.ACTION_NEXT -> mediaChannel?.invokeMethod("next", null)
             MusicService.ACTION_PREV -> mediaChannel?.invokeMethod("prev", null)
             MusicService.ACTION_STOP -> mediaChannel?.invokeMethod("stop", null)
+            MusicService.ACTION_SEEK -> {
+                val posMs = intent.getLongExtra("positionMs", 0L)
+                mediaChannel?.invokeMethod("seek", posMs)
+            }
+            "playPause" -> mediaChannel?.invokeMethod("playPause", null)
+            "next" -> mediaChannel?.invokeMethod("next", null)
+            "prev" -> mediaChannel?.invokeMethod("prev", null)
         }
     }
 
@@ -79,15 +111,19 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun startMusicService(title: String, artist: String, playing: Boolean) {
+    private fun startMusicService(title: String, artist: String, playing: Boolean, positionMs: Long = 0, durationMs: Long = 0) {
         val intent = Intent(this, MusicService::class.java).apply {
             putExtra("title", title); putExtra("artist", artist); putExtra("playing", playing)
+            putExtra("positionMs", positionMs); putExtra("durationMs", durationMs)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent) else startService(intent)
     }
 
-    private fun updateMusicService(title: String, artist: String, playing: Boolean) {
-        startService(Intent(this, MusicService::class.java).apply { putExtra("title", title); putExtra("artist", artist); putExtra("playing", playing) })
+    private fun updateMusicService(title: String, artist: String, playing: Boolean, positionMs: Long = 0, durationMs: Long = 0) {
+        startService(Intent(this, MusicService::class.java).apply {
+            putExtra("title", title); putExtra("artist", artist); putExtra("playing", playing)
+            putExtra("positionMs", positionMs); putExtra("durationMs", durationMs)
+        })
     }
 
     private fun stopMusicService() {
@@ -130,7 +166,6 @@ class MainActivity : FlutterActivity() {
     private fun setEqualizer(preset: String, sessionId: Int) {
         try {
             val sid = if (sessionId > 0) sessionId else {
-                // 尝试获取音频session
                 try {
                     val dummy = android.media.MediaPlayer()
                     val id = dummy.audioSessionId
@@ -145,7 +180,6 @@ class MainActivity : FlutterActivity() {
             val eq = equalizer ?: return
             val bands = eq.numberOfBands
             if (bands < 5) return
-            // 5-band EQ settings (60Hz, 230Hz, 910Hz, 3.6kHz, 14kHz)
             val settings = when (preset) {
                 "flat" -> shortArrayOf(0, 0, 0, 0, 0)
                 "djBass" -> shortArrayOf(800, 500, 200, 0, 0)
@@ -160,5 +194,47 @@ class MainActivity : FlutterActivity() {
                 eq.setBandLevel(i.toShort(), settings[i])
             }
         } catch (_: Exception) {}
+    }
+
+    // ── 悬浮窗控制 ──
+
+    private fun showOverlay(call: io.flutter.plugin.common.MethodCall) {
+        val intent = Intent(this, FloatingOverlayService::class.java).apply {
+            action = FloatingOverlayService.ACTION_SHOW
+            call.argument<String>("title")?.let { putExtra("title", it) }
+            call.argument<String>("artist")?.let { putExtra("artist", it) }
+            putExtra("playing", call.argument<Boolean>("playing") ?: false)
+            putExtra("positionMs", call.argument<Int>("positionMs")?.toLong() ?: 0L)
+            putExtra("durationMs", call.argument<Int>("durationMs")?.toLong() ?: 0L)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent) else startService(intent)
+    }
+
+    private fun updateOverlay(call: io.flutter.plugin.common.MethodCall) {
+        startService(Intent(this, FloatingOverlayService::class.java).apply {
+            action = FloatingOverlayService.ACTION_UPDATE
+            call.argument<String>("title")?.let { putExtra("title", it) }
+            call.argument<String>("artist")?.let { putExtra("artist", it) }
+            putExtra("playing", call.argument<Boolean>("playing") ?: false)
+            putExtra("positionMs", call.argument<Int>("positionMs")?.toLong() ?: 0L)
+            putExtra("durationMs", call.argument<Int>("durationMs")?.toLong() ?: 0L)
+        })
+    }
+
+    private fun hideOverlay() {
+        startService(Intent(this, FloatingOverlayService::class.java).apply {
+            action = FloatingOverlayService.ACTION_HIDE
+        })
+    }
+
+    private fun requestOverlayPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (!Settings.canDrawOverlays(this)) {
+                startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
+                    data = Uri.parse("package:$packageName")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                })
+            }
+        }
     }
 }

@@ -11,6 +11,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
 
     <application
         android:label="狸音乐"
@@ -43,6 +44,12 @@
             android:name=".MusicService"
             android:foregroundServiceType="mediaPlayback"
             android:exported="false"/>
+        <!-- 悬浮窗服务 -->
+        <service
+            android:name=".FloatingOverlayService"
+            android:foregroundServiceType="specialUse"
+            android:exported="false"/>
+
 
         <meta-data android:name="flutterEmbedding" android:value="2"/>
     </application>

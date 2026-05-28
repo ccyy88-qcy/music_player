@@ -7,6 +7,7 @@ import 'storage_manager.dart';
 
 const _channel = MethodChannel('com.alee.music_player/service');
 const _mediaChannel = MethodChannel('com.alee.music_player/media');
+const _overlayChannel = MethodChannel('com.alee.music_player/overlay');
 
 enum PlayMode { sequential, repeatOne, repeatAll, shuffle }
 enum EqPreset { flat, djBass, pop, vocal, classical, heavyBass }
@@ -56,12 +57,13 @@ class AudioPlayerHandler {
     _player.currentIndexStream.listen((idx) {
       if (idx != null && idx != _currentIndex) {
         _currentIndex = idx;
-        _lyricOffset = 0; // 切歌重置偏移
+        _lyricOffset = 0;
       }
     });
     // 歌词索引更新（应用偏移）
     _player.positionStream.listen((p) {
       _lyricIndex = LyricParser.findCurrentIndex(_lyrics, p, _lyricOffset);
+      _updateOverlay();
     });
     _mediaChannel.setMethodCallHandler((call) async {
       switch (call.method) {
@@ -69,13 +71,16 @@ class AudioPlayerHandler {
         case 'next': await skipToNext(); break;
         case 'prev': await skipToPrevious(); break;
         case 'stop': _stopFg(); _player.stop(); break;
+        case 'seek':
+          final posMs = (call.arguments as num?)?.toInt() ?? 0;
+          await _player.seek(Duration(milliseconds: posMs));
+          break;
       }
     });
   }
 
   Future<void> _initAudioSession() async {
-    // Android Equalizer用默认session，Kotlin侧处理
-    _audioSessionId = 1; // 占位，Kotlin用默认
+    _audioSessionId = 1;
     _applyEq(_eqPreset);
   }
 
@@ -91,14 +96,63 @@ class AudioPlayerHandler {
   void _notify() {
     final s = currentSong;
     if (s == null) return;
-    try { _channel.invokeMethod('update', {'title': s.title, 'artist': s.artist.isNotEmpty ? s.artist : '狸音乐', 'playing': _player.playing}); } catch (_) {}
+    try {
+      _channel.invokeMethod('update', {
+        'title': s.title,
+        'artist': s.artist.isNotEmpty ? s.artist : '狸音乐',
+        'playing': _player.playing,
+        'positionMs': _player.position.inMilliseconds,
+        'durationMs': _player.duration?.inMilliseconds ?? 0,
+      });
+    } catch (_) {}
+    _updateOverlay();
   }
+
   void _startFg() {
     final s = currentSong;
     if (s == null) return;
-    try { _channel.invokeMethod('start', {'title': s.title, 'artist': s.artist.isNotEmpty ? s.artist : '狸音乐', 'playing': true}); } catch (_) {}
+    try {
+      _channel.invokeMethod('start', {
+        'title': s.title,
+        'artist': s.artist.isNotEmpty ? s.artist : '狸音乐',
+        'playing': true,
+        'positionMs': _player.position.inMilliseconds,
+        'durationMs': _player.duration?.inMilliseconds ?? 0,
+      });
+    } catch (_) {}
+    _showOverlay();
   }
-  void _stopFg() { try { _channel.invokeMethod('stop'); } catch (_) {} }
+
+  void _stopFg() { try { _channel.invokeMethod('stop'); } catch (_) {} _hideOverlay(); }
+
+  // ── 悬浮窗 ──
+  void requestOverlayPermission() { try { _overlayChannel.invokeMethod('requestOverlay'); } catch (_) {} }
+
+  void _showOverlay() {
+    final s = currentSong; if (s == null) return;
+    try {
+      _overlayChannel.invokeMethod('show', {
+        'title': s.title, 'artist': s.artist.isNotEmpty ? s.artist : '狸音乐',
+        'playing': _player.playing,
+        'positionMs': _player.position.inMilliseconds,
+        'durationMs': _player.duration?.inMilliseconds ?? 0,
+      });
+    } catch (_) {}
+  }
+
+  void _updateOverlay() {
+    final s = currentSong; if (s == null) return;
+    try {
+      _overlayChannel.invokeMethod('update', {
+        'title': s.title, 'artist': s.artist.isNotEmpty ? s.artist : '狸音乐',
+        'playing': _player.playing,
+        'positionMs': _player.position.inMilliseconds,
+        'durationMs': _player.duration?.inMilliseconds ?? 0,
+      });
+    } catch (_) {}
+  }
+
+  void _hideOverlay() { try { _overlayChannel.invokeMethod('hide'); } catch (_) {} }
 
   /// 创建音频源
   AudioSource _createAudioSource(Song song) {
@@ -123,7 +177,6 @@ class AudioPlayerHandler {
     );
     _applyPlayMode(); _player.setSpeed(_speed); _player.play();
     _loadLyrics(); _startFg();
-    // 记录最近播放
     _saveRecent();
   }
 

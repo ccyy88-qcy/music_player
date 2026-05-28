@@ -3,7 +3,7 @@ import 'dart:io';
 import '../services/storage_manager.dart';
 import '../services/music_scanner.dart';
 import '../services/online_music_service.dart';
-import '../main.dart' show AppColors;
+import '../main.dart' show AppColors, audioHandler;
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -193,6 +193,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   style: TextStyle(color: Colors.white24, fontSize: 11)),
               onTap: () => _showApiHelp(),
             ),
+          ]),
+
+          const SizedBox(height: 20),
+
+          // ── 界面设置 ──
+          _sectionTitle('🖥️ 界面设置'),
+          _card([
+            StatefulBuilder(builder: (ctx, setInnerState) {
+              return SwitchListTile(
+                title: const Text('顶部悬浮窗',
+                    style: TextStyle(color: Colors.white, fontSize: 15)),
+                subtitle: Text(
+                  '在屏幕顶部显示当前播放控制条',
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12),
+                ),
+                value: _store.overlayEnabled,
+                activeColor: AppColors.orange,
+                onChanged: (v) async {
+                  await _store.setOverlayEnabled(v);
+                  setInnerState(() {});
+                  if (!v) {
+                    audioHandler.requestOverlayPermission();
+                  } else if (audioHandler.currentSong != null && audioHandler.player.playing) {
+                    audioHandler.requestOverlayPermission();
+                  }
+                },
+              );
+            }),
           ]),
 
           const SizedBox(height: 20),

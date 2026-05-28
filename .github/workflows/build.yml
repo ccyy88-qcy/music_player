@@ -42,10 +42,11 @@ jobs:
           # Copy network config
           mkdir -p tmp_project/android/app/src/main/res/xml
           cp android/app/src/main/res/xml/network_security_config.xml tmp_project/android/app/src/main/res/xml/ 2>/dev/null || true
-          # Copy MainActivity.kt + MusicService.kt
+          # Copy all Kotlin files (MainActivity, MusicService, FloatingOverlay)
           mkdir -p tmp_project/android/app/src/main/kotlin/com/alee/music_player
-          cp android/app/src/main/kotlin/com/alee/music_player/MainActivity.kt tmp_project/android/app/src/main/kotlin/com/alee/music_player/ 2>/dev/null || true
-          cp android/app/src/main/kotlin/com/alee/music_player/MusicService.kt tmp_project/android/app/src/main/kotlin/com/alee/music_player/ 2>/dev/null || true
+          cp android/app/src/main/kotlin/com/alee/music_player/*.kt tmp_project/android/app/src/main/kotlin/com/alee/music_player/
+          # Add androidx.media for MediaSession + MediaStyle lock screen controls
+          sed -i '/implementation.*kotlin.*stdlib/a\\    implementation("androidx.media:media:1.7.0")' tmp_project/android/app/build.gradle.kts
           mv tmp_project music_player_app
           cd music_player_app
 

@@ -17,6 +17,7 @@ class StorageManager {
   static const _keySpeed = 'playback_speed';
   static const _keyMusicSources = 'music_sources';
   static const _keyRecentSongs = 'recent_songs'; // 自定义音乐源JSON列表
+  static const _keyOverlayEnabled = 'overlay_enabled';
 
   static StorageManager? _instance;
   late SharedPreferences _prefs;
@@ -175,6 +176,13 @@ class StorageManager {
   double get playbackSpeed => _prefs.getDouble(_keySpeed) ?? 1.0;
   Future<void> setPlaybackSpeed(double speed) async {
     await _prefs.setDouble(_keySpeed, speed);
+  }
+
+  // ─────────── 悬浮窗 ───────────
+
+  bool get overlayEnabled => _prefs.getBool(_keyOverlayEnabled) ?? true;
+  Future<void> setOverlayEnabled(bool v) async {
+    await _prefs.setBool(_keyOverlayEnabled, v);
   }
 
   // ─────────── 音乐源管理 ───────────
