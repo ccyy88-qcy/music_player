@@ -130,14 +130,17 @@ class _OnlineScreenState extends State<OnlineScreen> with SingleTickerProviderSt
     });
   }
 
-  // ──── 在线播放 ────
   Future<void> _playOnline(OnlineSong song) async {
     setState(() => _playingId = song.id);
-    final playUrl = await _source!.getPlayUrl(song);
+    var playUrl = await _source!.getPlayUrl(song);
+    // 失败时主动跨源搜索替代版本
+    if (playUrl == null && song.fee > 0) {
+      playUrl = await _searchAltUrl(song);
+    }
     if (playUrl == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${song.title} - 获取播放地址失败，可能需要VIP'), backgroundColor: Colors.red, duration: const Duration(seconds: 2)),
+          SnackBar(content: Text('${song.title} - 无法获取播放地址'), backgroundColor: Colors.red, duration: const Duration(seconds: 2)),
         );
       }
       setState(() => _playingId = null);
@@ -155,6 +158,35 @@ class _OnlineScreenState extends State<OnlineScreen> with SingleTickerProviderSt
       Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen()));
     }
     setState(() => _playingId = null);
+  }
+
+  /// VIP歌曲跨源搜索免费替代版本
+  Future<String?> _searchAltUrl(OnlineSong song) async {
+    try {
+      final srcs = [_source]; // 用聚合源搜索
+      final kw = '${song.title} ${song.artist}';
+      for (final s in [NeteaseSource(), QQSource(), KugouSource()]) {
+        try {
+          final results = await s.search(kw, limit: 10);
+          for (final alt in results) {
+            if (alt.fee == 0 && alt.id != song.id) {
+              try {
+                final u = await s.getPlayUrl(alt);
+                if (u != null && u.startsWith('http')) return u;
+              } catch (_) {}
+            }
+            // 也试同一首歌（不同源可能有不同付费策略）
+            if (alt.title.contains(song.title) && alt.id != song.id) {
+              try {
+                final u = await s.getPlayUrl(alt);
+                if (u != null && u.startsWith('http')) return u;
+              } catch (_) {}
+            }
+          }
+        } catch (_) {}
+      }
+    } catch (_) {}
+    return null;
   }
 
   // ──── 排行榜列表播放（整榜） ────
