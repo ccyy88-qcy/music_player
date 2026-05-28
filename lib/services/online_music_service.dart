@@ -225,18 +225,24 @@ class QQSource extends MusicSource {
       final guid = DateTime.now().millisecondsSinceEpoch % 1000000000;
       final data = jsonEncode({'req_0': {'module': 'vkey.GetVkeyServer', 'method': 'CgiGetVkey', 'param': {'guid': guid.toString(), 'songmid': [song.id], 'songtype': [0], 'uin': '0', 'loginflag': 1, 'platform': '20'}}});
       final url = 'https://u.y.qq.com/cgi-bin/musicu.fcg?format=json&data=${Uri.encodeComponent(data)}';
-      final resp = await http.get(Uri.parse(url), headers: _h()).timeout(const Duration(seconds: 5));
-      if (resp.statusCode == 200) {
-        final d = jsonDecode(resp.body);
-        final midurlinfo = d['req_0']?['data']?['midurlinfo'] as List?;
-        if (midurlinfo != null && midurlinfo.isNotEmpty) {
-          final purl = midurlinfo[0]['purl']?.toString();
-          if (purl != null && purl.isNotEmpty) return 'http://ws.stream.qqmusic.qq.com/$purl';
+      // 用dart:io HttpClient（比http包更稳定）
+      final client = HttpClient();
+      client.userAgent = 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36';
+      try {
+        final req = await client.getUrl(Uri.parse(url));
+        req.headers.set('Referer', 'https://music.163.com/');
+        final resp = await req.close().timeout(const Duration(seconds: 5));
+        if (resp.statusCode == 200) {
+          final body = await resp.transform(utf8.decoder).join();
+          final d = jsonDecode(body) as Map;
+          final midurlinfo = (d['req_0'] as Map?)?['data']?['midurlinfo'] as List?;
+          if (midurlinfo != null && midurlinfo.isNotEmpty) {
+            final purl = midurlinfo[0]['purl']?.toString() ?? '';
+            if (purl.isNotEmpty) return 'http://ws.stream.qqmusic.qq.com/$purl';
+          }
         }
-      }
-    } catch (e) {
-      // QQ getPlayUrl error
-    }
+      } finally { client.close(); }
+    } catch (_) {}
     return null;
   }
 
