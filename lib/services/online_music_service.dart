@@ -9,7 +9,7 @@ class OnlineSong {
   final String id, title, artist, album, source;
   final String? coverUrl;
   final int? duration;
-  final int fee; // 0=免费, 1=会员, 4=付费, 8=VIP
+  final int fee;
 
   const OnlineSong({
     required this.id, required this.title, required this.artist,
@@ -53,16 +53,42 @@ class OnlineSong {
 
 abstract class MusicSource {
   String get name;
-  String get key; // 短key，与OnlineSong.source匹配
+  String get key;
   Future<List<OnlineSong>> search(String keyword, {int page = 1, int limit = 20});
   Future<String?> getPlayUrl(OnlineSong song);
   Future<String?> getLyric(OnlineSong song);
 }
 
 Map<String, String> _h() => {
-  'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+  'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36',
   'Referer': 'https://music.163.com/',
 };
+
+/// 解析302/301重定向获取真实CDN地址
+Future<String?> _resolveRedirect(String url, {int maxFollow = 5}) async {
+  var currentUrl = url;
+  for (int i = 0; i < maxFollow; i++) {
+    try {
+      final req = http.Request('GET', Uri.parse(currentUrl));
+      req.headers.addAll({
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36',
+        'Referer': 'https://music.163.com/',
+        'Accept': '*/*',
+      });
+      req.followRedirects = false;
+      final resp = await http.Client().send(req).timeout(const Duration(seconds: 8));
+      if (resp.statusCode == 302 || resp.statusCode == 301) {
+        final loc = resp.headers['location'] ?? '';
+        if (loc.isEmpty) return null;
+        currentUrl = loc.startsWith('http') ? loc : '${Uri.parse(currentUrl).origin}$loc';
+        continue;
+      }
+      if (resp.statusCode == 200) return currentUrl;
+      return null;
+    } catch (_) { return null; }
+  }
+  return currentUrl;
+}
 
 /// ========== 网易云音乐 API ==========
 class NeteaseSource extends MusicSource {
@@ -71,72 +97,45 @@ class NeteaseSource extends MusicSource {
 
   @override Future<List<OnlineSong>> search(String keyword, {int page = 1, limit = 20}) async {
     final results = <OnlineSong>[];
-    
-    // 不过滤翻唱（有些歌只有翻唱版有免费源）
-    // 只过滤伴奏/纯音乐（不太可能被用户需要）
     final instrumentalKeywords = ['伴奏', '纯音乐', 'inst', 'instrumental'];
-    
-    // NMTID Cookie显著提升搜索结果准确性
     final searchHeaders = {
       'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36',
       'Referer': 'https://music.163.com/',
       'Cookie': 'NMTID=00OKlEq2nVNMgNF05CFI1JjHgQehWAAAQJZovaw',
     };
-    
     final url = 'https://music.163.com/api/search/get?s=${Uri.encodeComponent(keyword)}&type=1&limit=$limit&offset=${(page - 1) * limit}';
     final resp = await http.get(Uri.parse(url), headers: searchHeaders).timeout(const Duration(seconds: 10));
     if (resp.statusCode != 200) return [];
-    
     try {
       final d = jsonDecode(resp.body);
       final songs = d['result']?['songs'] as List?;
       if (songs == null || songs.isEmpty) return [];
-      
       for (final s in songs) {
-        final fee = s['fee'] ?? 0;
         final name = s['name'] ?? '';
         final artistStr = ((s['artists'] as List?)?.map((a) => a['name'] ?? '').join('/') ?? '');
         final album = s['album'] as Map?;
-        
-        // 不按fee过滤VIP，播放时再尝试获取地址（部分会员歌CDN不检查权限）
-        
-        // 过滤伴奏/纯音乐（用户不太需要）
-        bool isInstrumental = instrumentalKeywords.any((kw) => name.contains(kw));
-        if (isInstrumental) continue;
-        
-        // 过滤时长太短的（<60秒通常是试听或片段）
         final duration = s['duration'] as int? ?? 0;
+        if (instrumentalKeywords.any((kw) => name.contains(kw))) continue;
         if (duration > 0 && duration < 60000) continue;
-        
         results.add(OnlineSong(
-          id: s['id'].toString(),
-          title: name,
-          artist: artistStr,
-          album: album?['name'] ?? '',
-          coverUrl: album?['picUrl'],
-          source: 'netease',
-          duration: duration,
-          fee: fee,
+          id: s['id'].toString(), title: name, artist: artistStr,
+          album: album?['name'] ?? '', coverUrl: album?['picUrl'],
+          source: 'netease', duration: duration, fee: s['fee'] as int? ?? 0,
         ));
       }
-      
-      // 排序：免费优先 > 时长优先
       results.sort((a, b) {
-        // 免费优先
         if (a.fee != b.fee) return a.fee.compareTo(b.fee);
-        // 时长优先
         return (b.duration ?? 0).compareTo(a.duration ?? 0);
       });
-      
       return results;
     } catch (_) { return []; }
   }
 
   @override Future<String?> getPlayUrl(OnlineSong song) async {
-    // 使用不需要加密的接口（已验证可用）
-    final url = 'https://music.163.com/api/song/enhance/player/url?id=${song.id}&ids=%5B${song.id}%5D&br=320000';
+    // 1. enhance API (免费歌直接返回CDN)
     try {
-      final resp = await http.get(Uri.parse(url), headers: _h()).timeout(const Duration(seconds: 10));
+      final url = 'https://music.163.com/api/song/enhance/player/url?id=${song.id}&ids=%5B${song.id}%5D&br=320000';
+      final resp = await http.get(Uri.parse(url), headers: _h()).timeout(const Duration(seconds: 5));
       if (resp.statusCode == 200) {
         final d = jsonDecode(resp.body);
         final data = d['data'] as List?;
@@ -146,8 +145,14 @@ class NeteaseSource extends MusicSource {
         }
       }
     } catch (_) {}
-    // 降级：outer/url
-    return 'https://music.163.com/song/media/outer/url?id=${song.id}.mp3';
+
+    // 2. outer/url + 解析重定向
+    try {
+      final outerUrl = 'https://music.163.com/song/media/outer/url?id=${song.id}.mp3';
+      final resolved = await _resolveRedirect(outerUrl);
+      if (resolved != null && resolved.startsWith('http') && !resolved.contains('404')) return resolved;
+    } catch (_) {}
+    return null;
   }
 
   @override Future<String?> getLyric(OnlineSong song) async {
@@ -188,7 +193,7 @@ class QQSource extends MusicSource {
       final guid = DateTime.now().millisecondsSinceEpoch % 1000000000;
       final data = jsonEncode({'req_0': {'module': 'vkey.GetVkeyServer', 'method': 'CgiGetVkey', 'param': {'guid': guid.toString(), 'songmid': [song.id], 'songtype': [0], 'uin': '0', 'loginflag': 1, 'platform': '20'}}});
       final url = 'https://u.y.qq.com/cgi-bin/musicu.fcg?format=json&data=${Uri.encodeComponent(data)}';
-      final resp = await http.get(Uri.parse(url), headers: _h()).timeout(const Duration(seconds: 8));
+      final resp = await http.get(Uri.parse(url), headers: _h()).timeout(const Duration(seconds: 5));
       if (resp.statusCode == 200) {
         final d = jsonDecode(resp.body);
         final midurlinfo = d['req_0']?['data']?['midurlinfo'] as List?;
@@ -227,14 +232,20 @@ class KugouSource extends MusicSource {
       final d = jsonDecode(resp.body);
       final songs = d['data']?['info'] as List?;
       if (songs == null || songs.isEmpty) return [];
-      return songs.map((s) => OnlineSong(id: s['hash']?.toString() ?? '', title: s['songname'] ?? '', artist: s['singername'] ?? '', album: s['album_name'] ?? '', coverUrl: s['album_img']?.toString().replaceAll('{size}', '300'), source: 'kugou', duration: (s['duration'] as int?) != null ? (s['duration'] as int) * 1000 : null)).toList();
+      return songs.map((s) => OnlineSong(
+        id: s['hash']?.toString() ?? '', title: s['songname'] ?? '',
+        artist: s['singername'] ?? '', album: s['album_name'] ?? '',
+        coverUrl: s['album_img']?.toString().replaceAll('{size}', '300'),
+        source: 'kugou', duration: (s['duration'] as int?) != null ? (s['duration'] as int) * 1000 : null
+      )).toList();
     } catch (_) { return []; }
   }
 
   @override Future<String?> getPlayUrl(OnlineSong song) async {
-    final url = 'http://trackercdn.kugou.com/i/v2/?cmd=25&key=${song.id}&hash=${song.id}&behavior=play&appid=1005&mid=0&userid=0&version=0&vipType=0&token=0';
+    // 酷狗v2 tracker API
     try {
-      final resp = await http.get(Uri.parse(url), headers: _h()).timeout(const Duration(seconds: 8));
+      final url = 'http://trackercdn.kugou.com/i/v2/?cmd=25&hash=${song.id}&behavior=play&appid=1005&mid=0&userid=0&version=0&vipType=0';
+      final resp = await http.get(Uri.parse(url), headers: _h()).timeout(const Duration(seconds: 5));
       if (resp.statusCode == 200) {
         final d = jsonDecode(resp.body);
         final urlList = d['url'] as List?;
@@ -242,6 +253,16 @@ class KugouSource extends MusicSource {
           final urlStr = urlList[0]?.toString();
           if (urlStr != null && urlStr.startsWith('http')) return urlStr;
         }
+      }
+    } catch (_) {}
+    // 酷狗getdata API降级
+    try {
+      final url = 'http://www.kugou.com/yy/index.php?r=play/getdata&hash=${song.id}';
+      final resp = await http.get(Uri.parse(url), headers: _h()).timeout(const Duration(seconds: 5));
+      if (resp.statusCode == 200) {
+        final d = jsonDecode(resp.body);
+        final playUrl = d['data']?['play_url']?.toString();
+        if (playUrl != null && playUrl.startsWith('http')) return playUrl;
       }
     } catch (_) {}
     return null;
@@ -295,49 +316,11 @@ class CustomApiSource extends MusicSource {
   }
 }
 
-/// ========== Huibq 第三方聚合API（洛雪音乐同款） ==========
-class HuibqSource extends MusicSource {
-  static const _apiUrl = 'https://lxmusicapi.onrender.com';
-  static const _apiKey = 'share-v3';
-
-  @override String get name => 'Huibq';
-  @override String get key => 'huibq';
-
-  @override Future<List<OnlineSong>> search(String keyword, {int page = 1, limit = 20}) async {
-    return []; // 搜索由其他源处理，Huibq只提供播放地址
-  }
-
-  @override Future<String?> getPlayUrl(OnlineSong song) async {
-    // 将source映射到Huibq支持的格式
-    final sourceMap = {'netease': 'wy', 'qq': 'tx', 'kugou': 'kw'};
-    final src = sourceMap[song.source] ?? 'tx';
-    try {
-      final url = '$_apiUrl/url/$src/${song.id}/320k';
-      final resp = await http.get(Uri.parse(url), headers: {
-        'User-Agent': 'lx-music-mobile/2.0.0',
-        'X-Request-Key': _apiKey,
-      }).timeout(const Duration(seconds: 10));
-      if (resp.statusCode == 200) {
-        final d = jsonDecode(resp.body);
-        if (d['code'] == 0 && d['url'] != null) {
-          return d['url'].toString();
-        }
-      }
-    } catch (_) {}
-    return null;
-  }
-
-  @override Future<String?> getLyric(OnlineSong song) async {
-    // 使用网易云获取歌词
-    return null;
-  }
-}
-
 /// ========== 聚合多源 ==========
 Future<MusicSource> getMusicSourceAsync() async {
   final store = await storage;
   final custom = store.getMusicSources();
-  final srcs = <MusicSource>[NeteaseSource(), QQSource(), KugouSource(), HuibqSource()];
+  final srcs = <MusicSource>[NeteaseSource(), QQSource(), KugouSource()];
   for (final s in custom) { srcs.add(CustomApiSource(name: s['name'] ?? '自定义', searchUrl: '${s['url']}/search?key={keyword}&page={page}&limit={limit}', playUrl: '${s['url']}/url?id={id}', lyricUrl: '${s['url']}/lyric?id={id}')); }
   return AggregateSource(srcs);
 }
@@ -354,7 +337,6 @@ class AggregateSource extends MusicSource {
   @override String get key => name;
 
   @override Future<List<OnlineSong>> search(String keyword, {int page = 1, int limit = 20}) async {
-    // 并查所有源，合并去重
     final all = <String, OnlineSong>{};
     final results = await Future.wait(_srcs.map((s) => s.search(keyword, page: page, limit: limit).catchError((_) => <OnlineSong>[])));
     for (final r in results) {
@@ -364,42 +346,30 @@ class AggregateSource extends MusicSource {
     }
     final merged = all.values.toList();
     merged.sort((a, b) => a.fee.compareTo(b.fee));
-    return merged.take(limit * 2).toList();
+    return merged;
   }
 
-  /// 根据song.source路由到正确的源获取播放地址
   @override Future<String?> getPlayUrl(OnlineSong song) async {
-    // 1. 先试Huibq（第三方聚合，成功率最高）
-    final huibq = _srcMap['huibq'];
-    if (huibq != null) {
-      try { final u = await huibq.getPlayUrl(song); if (u != null && u.startsWith('http')) return u; } catch (_) {}
-    }
-    // 2. 直接路由到歌曲来源
+    // 1. 直接路由到歌曲来源（快速）
     final known = _srcMap[song.source];
     if (known != null) {
       try { final u = await known.getPlayUrl(song); if (u != null && u.startsWith('http')) return u; } catch (_) {}
     }
-    // 3. 降级：遍历其他源
+    // 2. 遍历其他源
     for (final s in _srcs) {
+      if (s.key == song.source) continue;
       try { final u = await s.getPlayUrl(song); if (u != null && u.startsWith('http')) return u; } catch (_) {}
     }
-    // 4. VIP歌曲 -> 跨源搜索同名歌曲来播
+    // 3. 跨源搜索同名歌曲（VIP降级）
     try {
-      final otherSources = _srcs.where((s) => s.key != song.source && s.key != 'huibq').toList();
-      for (final s in otherSources) {
-        final results = await s.search(song.title, limit: 3);
+      final others = _srcs.where((s) => s.key != song.source).toList();
+      for (final s in others) {
+        final results = await s.search('${song.title} ${song.artist}', limit: 5);
         for (final result in results) {
-          if (result.title.contains(song.title.substring(0, song.title.length > 4 ? 4 : song.title.length))) {
-            try {
-              // 再用Huibq播
-              if (huibq != null) {
-                final u = await huibq.getPlayUrl(result);
-                if (u != null && u.startsWith('http')) return u;
-              }
-              final u = await s.getPlayUrl(result);
-              if (u != null && u.startsWith('http')) return u;
-            } catch (_) {}
-          }
+          try {
+            final u = await s.getPlayUrl(result);
+            if (u != null && u.startsWith('http')) return u;
+          } catch (_) {}
         }
       }
     } catch (_) {}
@@ -426,9 +396,8 @@ class DownloadManager {
       final path = '$saveDir/$safe.mp3';
       if (File(path).existsSync()) return path;
 
-      // 手动处理302跳转
       var url = playUrl;
-      for (int i = 0; i < 5; i++) { // 最多5次跳转
+      for (int i = 0; i < 5; i++) {
         final req = http.Request('GET', Uri.parse(url));
         req.headers.addAll({
           'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36',
@@ -444,12 +413,11 @@ class DownloadManager {
         }
         if (resp.statusCode != 200) return null;
         final bytes = await resp.stream.toBytes();
-        if (bytes.length < 1000) return null; // 太小可能是错误页面
-        // 检查文件头
+        if (bytes.length < 1000) return null;
         if (bytes.length > 4) {
-          final isAudio = (bytes[0] == 0x49 && bytes[1] == 0x44 && bytes[2] == 0x33) || // ID3
-              (bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0) || // MP3 sync
-              (bytes[0] == 0x66 && bytes[1] == 0x4C && bytes[2] == 0x61 && bytes[3] == 0x43); // FLAC
+          final isAudio = (bytes[0] == 0x49 && bytes[1] == 0x44 && bytes[2] == 0x33) ||
+              (bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0) ||
+              (bytes[0] == 0x66 && bytes[1] == 0x4C && bytes[2] == 0x61 && bytes[3] == 0x43);
           if (!isAudio) return null;
         }
         await File(path).writeAsBytes(bytes);
@@ -462,7 +430,7 @@ class DownloadManager {
 
 List<Map<String, String>> parseJsSource(String content) {
   final sources = <Map<String, String>>[];
-  final nameRe = RegExp(r'''['"]name['"]\s*[:=]\s*['"]([^'"]+)['"]''');
+  final nameRe = RegExp(r'''['\"]name['\"]\s*[:=]\s*['\"]([^'\"]+)['\"]''');
   final urlRe = RegExp(r'''https?://[^\s'"`\[\]{}()<>]+\.[^\s'"`\[\]{}()<>]+''');
   final urls = urlRe.allMatches(content).map((m) => m.group(0)!).toSet();
   String name = '导入源';
