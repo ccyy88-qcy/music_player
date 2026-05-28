@@ -208,71 +208,38 @@ class _OnlineScreenState extends State<OnlineScreen> with SingleTickerProviderSt
 
   // ──── 排行榜列表播放（整榜） ────
   Future<void> _playChartList(List<ChartSong> songs, int startIndex) async {
-    // 并行获取歌单中所有可播放的URL，只播放可用的
     setState(() => _playingId = songs[startIndex].id);
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Row(children: [
-          SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
-          SizedBox(width: 12),
-          Text('解析播放地址...'),
-        ]), duration: Duration(seconds: 10)),
+        const SnackBar(content: Text('解析播放地址...'), duration: Duration(seconds: 5)),
       );
     }
 
-    // 并行获取前20首歌的URL
-    final limit = songs.length > 20 ? 20 : songs.length;
-    final futures = <Future<String?>>[];
-    for (int i = 0; i < limit; i++) {
-      futures.add(_source!.getPlayUrl(songs[i]));
-    }
-    final urls = await Future.wait(futures);
+    // 直接解析用户点击的单首歌曲，不批量
+    final song = songs[startIndex];
+    String? playUrl;
+    try {
+      playUrl = await _source!.getPlayUrl(song);
+    } catch (_) {}
 
-    // 只保留可播放的歌曲
-    final playableSongs = <Song>[];
-    int newStartIndex = 0;
-    for (int i = 0; i < limit; i++) {
-      final url = urls[i];
-      if (url != null && url.startsWith('http')) {
-        if (i == startIndex) newStartIndex = playableSongs.length;
-        playableSongs.add(Song(title: songs[i].title, artist: songs[i].artist, filePath: url, category: MusicCategory.pop));
-      }
-    }
-
-    if (playableSongs.isEmpty) {
+    if (playUrl == null || !playUrl.startsWith('http')) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('歌曲全部无法播放（可能都需要VIP）'), backgroundColor: Colors.red),
+          const SnackBar(content: Text('该歌曲暂时无法播放'), backgroundColor: Colors.red),
         );
       }
       setState(() => _playingId = null);
       return;
     }
 
-    // 后台预加载更多歌曲（第21首起）
-    if (songs.length > 20) {
-      _preloadRemainingUrls(songs, playableSongs);
-    }
-
-    audioHandler.loadSongList(playableSongs, startIndex: newStartIndex);
+    final tempSong = Song(title: song.title, artist: song.artist, filePath: playUrl, category: MusicCategory.pop);
+    audioHandler.loadSongList([tempSong], startIndex: 0);
 
     if (mounted) {
       Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen()));
     }
     setState(() => _playingId = null);
-  }
-
-  void _preloadRemainingUrls(List<ChartSong> songs, List<Song> playable) async {
-    for (int i = 20; i < songs.length; i++) {
-      try {
-        final url = await _source!.getPlayUrl(songs[i]);
-        if (url != null && url.startsWith('http')) {
-          playable.add(Song(title: songs[i].title, artist: songs[i].artist, filePath: url, category: MusicCategory.pop));
-        }
-      } catch (_) {}
-    }
-    // 预加载的歌曲会在下次loadSongList时生效
   }
 
   // ──── 单曲下载 ────

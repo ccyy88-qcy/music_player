@@ -151,7 +151,7 @@ class FloatingOverlayService : Service() {
     private fun sendToActivity(action: String) {
         val intent = Intent(this, MainActivity::class.java).apply {
             this.action = action
-            addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         startActivity(intent)
     }
