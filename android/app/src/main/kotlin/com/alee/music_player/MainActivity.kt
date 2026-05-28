@@ -37,8 +37,8 @@ class MainActivity : FlutterActivity() {
                             call.argument("title") ?: "狸音乐",
                             call.argument("artist") ?: "",
                             call.argument("playing") ?: true,
-                            call.argument("positionMs") ?: 0,
-                            call.argument("durationMs") ?: 0
+                            (call.argument<Any>("positionMs") as? Number)?.toLong() ?: 0L,
+                            (call.argument<Any>("durationMs") as? Number)?.toLong() ?: 0L
                         )
                         result.success(true)
                     }
@@ -47,8 +47,8 @@ class MainActivity : FlutterActivity() {
                             call.argument("title") ?: "狸音乐",
                             call.argument("artist") ?: "",
                             call.argument("playing") ?: false,
-                            call.argument("positionMs") ?: 0,
-                            call.argument("durationMs") ?: 0
+                            (call.argument<Any>("positionMs") as? Number)?.toLong() ?: 0L,
+                            (call.argument<Any>("durationMs") as? Number)?.toLong() ?: 0L
                         )
                         result.success(true)
                     }
