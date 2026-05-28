@@ -129,8 +129,17 @@ class MainActivity : FlutterActivity() {
 
     private fun setEqualizer(preset: String, sessionId: Int) {
         try {
-            if (equalizer == null && sessionId > 0) {
-                equalizer = Equalizer(0, sessionId)
+            val sid = if (sessionId > 0) sessionId else {
+                // 尝试获取音频session
+                try {
+                    val dummy = android.media.MediaPlayer()
+                    val id = dummy.audioSessionId
+                    dummy.release()
+                    id
+                } catch (_: Exception) { 0 }
+            }
+            if (equalizer == null && sid > 0) {
+                equalizer = Equalizer(0, sid)
                 equalizer?.enabled = true
             }
             val eq = equalizer ?: return

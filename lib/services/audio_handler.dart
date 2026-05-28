@@ -4,7 +4,6 @@ import 'package:just_audio/just_audio.dart';
 import '../models/song.dart';
 import 'lyric_parser.dart';
 import 'storage_manager.dart';
-import 'package:audio_session/audio_session.dart';
 
 const _channel = MethodChannel('com.alee.music_player/service');
 const _mediaChannel = MethodChannel('com.alee.music_player/media');
@@ -75,29 +74,16 @@ class AudioPlayerHandler {
   }
 
   Future<void> _initAudioSession() async {
-    try {
-      final session = await AudioSession.instance;
-      await session.configure(const AudioSessionConfiguration(
-        avAudioSessionCategory: AVAudioSessionCategory.playback,
-        androidAudioAttributes: AndroidAudioAttributes(
-          contentType: AndroidAudioContentType.music,
-          usage: AndroidAudioUsage.media,
-        ),
-        androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
-      ));
-      _audioSessionId = session.androidAudioSessionId;
-      if (_audioSessionId != null && _audioSessionId! > 0) {
-        _applyEq(_eqPreset);
-      }
-    } catch (_) {}
+    // Android Equalizer用默认session，Kotlin侧处理
+    _audioSessionId = 1; // 占位，Kotlin用默认
+    _applyEq(_eqPreset);
   }
 
   void _applyEq(EqPreset preset) {
-    if (_audioSessionId == null) return;
     try {
       _channel.invokeMethod('setEqualizer', {
         'preset': preset.name,
-        'sessionId': _audioSessionId,
+        'sessionId': _audioSessionId ?? 0,
       });
     } catch (_) {}
   }
