@@ -28,13 +28,15 @@ class FloatingOverlayView(context: Context) : View(context) {
     private val handler = Handler(Looper.getMainLooper())
     private val collapseDelayMs = 5000L
     private val collapseRunnable = Runnable { toggleCollapse() }
-    private var currentY = 48 // 当前Y偏移(dp)
+    private val circleY = 4 // 小球距顶4dp（几乎在最顶）
+    private val barY = 72 // 展开条形距顶72dp（避开状态栏）
 
     fun toggleCollapse() {
         collapsed = !collapsed
         handler.removeCallbacks(collapseRunnable)
         if (!collapsed) handler.postDelayed(collapseRunnable, collapseDelayMs)
-        val (w, h, yOff) = if (collapsed) Triple(CIRCLE_SIZE, CIRCLE_SIZE, currentY) else Triple(BAR_WIDTH, BAR_HEIGHT, currentY + 32)
+        val yOff = if (collapsed) circleY else barY
+        val (w, h) = if (collapsed) Pair(CIRCLE_SIZE, CIRCLE_SIZE) else Pair(BAR_WIDTH, BAR_HEIGHT)
         onResize?.invoke(w, h, yOff)
         postInvalidate()
     }
