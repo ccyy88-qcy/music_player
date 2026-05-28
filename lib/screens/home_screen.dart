@@ -15,124 +15,13 @@ import 'settings_screen.dart';
 import 'online_screen.dart';
 import '../main.dart' show audioHandler, AppColors;
 
-// ─── 浮动音乐笔记粒子 ───
-class _FloatingNote {
-  double x, y, size, speed, opacity, rot;
-  final int type; // 0=♪ 1=♫ 2=♩
-  _FloatingNote(this.x, this.y, this.size, this.speed, this.opacity, this.rot, this.type);
-}
-
-class _NoteParticleBackground extends StatefulWidget {
-  final Widget child;
-  const _NoteParticleBackground({required this.child});
-  @override
-  State<_NoteParticleBackground> createState() => _NoteParticleBackgroundState();
-}
-
-class _NoteParticleBackgroundState extends State<_NoteParticleBackground> with SingleTickerProviderStateMixin {
-  late AnimationController _ctrl;
-  List<_FloatingNote> _notes = [];
-  final _rng = math.Random();
-
-  @override
-  void initState() {
-    super.initState();
-    _notes = List.generate(18, (_) => _createNote(init: true));
-    _ctrl = AnimationController(vsync: this, duration: const Duration(seconds: 30))..addListener(_update)..repeat();
-  }
-
-  _FloatingNote _createNote({bool init = false}) {
-    return _FloatingNote(
-      _rng.nextDouble() * 400 - 50,
-      init ? _rng.nextDouble() * 700 - 100 : -30 - _rng.nextDouble() * 100,
-      12 + _rng.nextDouble() * 18,
-      0.15 + _rng.nextDouble() * 0.35,
-      0.08 + _rng.nextDouble() * 0.2,
-      _rng.nextDouble() * math.pi * 2,
-      _rng.nextInt(3),
-    );
-  }
-
-  void _update() {
-    if (!mounted) return;
-    setState(() {
-      for (int i = 0; i < _notes.length; i++) {
-        _notes[i].y -= _notes[i].speed;
-        _notes[i].x += math.sin(_notes[i].y * 0.02) * 0.4;
-        _notes[i].rot += 0.003;
-        if (_notes[i].y < -60) {
-          _notes[i] = _createNote();
-          _notes[i].y = 800 + _rng.nextDouble() * 200;
-        }
-      }
-    });
-  }
-
-  @override
-  void dispose() { _ctrl.dispose(); super.dispose(); }
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        widget.child,
-        Positioned.fill(
-          child: IgnorePointer(
-            child: AnimatedBuilder(
-              animation: _ctrl,
-              builder: (_, __) => CustomPaint(
-                painter: _NotePainter(_notes, _ctrl.value),
-                size: Size.infinite,
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _NotePainter extends CustomPainter {
-  final List<_FloatingNote> notes;
-  final double t;
-  _NotePainter(this.notes, this.t);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    for (final n in notes) {
-      canvas.save();
-      canvas.translate(n.x, n.y);
-      canvas.rotate(n.rot);
-      final paint = Paint()
-        ..color = AppColors.foxOrange.withValues(alpha: n.opacity)
-        ..style = PaintingStyle.fill;
-      final textStyle = TextStyle(
-        color: AppColors.foxOrange.withValues(alpha: n.opacity),
-        fontSize: n.size,
-        fontWeight: FontWeight.w300,
-      );
-      final tp = TextPainter(
-        text: TextSpan(text: ['♪', '♫', '♩'][n.type], style: textStyle),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      tp.paint(canvas, Offset(-tp.width / 2, -tp.height / 2));
-      canvas.restore();
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _NotePainter o) => true;
-}
-
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
-
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen>
-    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final TabController _tabController;
   final TextEditingController _searchCtrl = TextEditingController();
   late final AnimationController _gradientCtrl;
@@ -155,8 +44,7 @@ class _HomeScreenState extends State<HomeScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
-    _gradientCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 6))..repeat(reverse: true);
-    // 监听切歌 → 刷新MiniPlayer（只监听index变化避免频繁setState）
+    _gradientCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 8))..repeat(reverse: true);
     _songSub = audioHandler.player.currentIndexStream.listen((_) { if (mounted) setState(() {}); });
     WidgetsBinding.instance.addObserver(this);
     _initAndScan();
@@ -185,7 +73,7 @@ class _HomeScreenState extends State<HomeScreen>
             content: const Text('扫描本地音乐需要存储权限。\n请在系统设置中手动开启。', style: TextStyle(color: AppColors.textSecondary)),
             actions: [
               TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消', style: TextStyle(color: AppColors.textSecondary))),
-              TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('去设置', style: TextStyle(color: AppColors.foxOrange))),
+              TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('去设置', style: TextStyle(color: AppColors.primary))),
             ],
           ),
         );
@@ -225,7 +113,6 @@ class _HomeScreenState extends State<HomeScreen>
   Future<void> _openSettings() async { await Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen())); if (mounted) _scanMusic(forceFull: true); }
   int _countFav() => _store?.getFavorites().length ?? 0;
 
-  // ─── 长按歌曲菜单 ───
   void _onSongLongPress(BuildContext context, Song song) {
     final isLocal = !song.filePath.startsWith('http');
     showModalBottomSheet(
@@ -236,18 +123,22 @@ class _HomeScreenState extends State<HomeScreen>
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 8),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 12), decoration: BoxDecoration(color: AppColors.textSecondary.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(2))),
+            Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(color: AppColors.textTertiary, borderRadius: BorderRadius.circular(2))),
             ListTile(
-              leading: const Icon(Icons.info_outline_rounded, color: AppColors.foxOrange), title: const Text('🎵 歌曲详情', style: TextStyle(color: AppColors.textPrimary)),
+              leading: const Icon(Icons.info_outline_rounded, color: AppColors.primary),
+              title: const Text('🎵 歌曲详情', style: TextStyle(color: AppColors.textPrimary)),
               onTap: () { Navigator.pop(ctx); _showSongDetails(context, song); },
             ),
             ListTile(
-              leading: const Icon(Icons.lyrics_rounded, color: AppColors.purple), title: const Text('📄 下载歌词', style: TextStyle(color: AppColors.textPrimary)),
-              subtitle: const Text('保存.lrc文件到歌曲目录', style: TextStyle(color: AppColors.textSecondary, fontSize: 11)),
+              leading: const Icon(Icons.lyrics_rounded, color: AppColors.accent),
+              title: const Text('📄 下载歌词', style: TextStyle(color: AppColors.textPrimary)),
+              subtitle: const Text('保存.lrc文件到歌曲目录', style: TextStyle(color: AppColors.textTertiary, fontSize: 11)),
               onTap: () { Navigator.pop(ctx); _downloadLyrics(context, song); },
             ),
             if (isLocal) ListTile(
-              leading: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent), title: const Text('🗑️ 删除歌曲', style: TextStyle(color: Colors.redAccent)),
+              leading: const Icon(Icons.delete_outline_rounded, color: AppColors.error),
+              title: const Text('🗑️ 删除歌曲', style: TextStyle(color: AppColors.error)),
               onTap: () { Navigator.pop(ctx); _deleteSong(context, song); },
             ),
           ]),
@@ -268,7 +159,7 @@ class _HomeScreenState extends State<HomeScreen>
         backgroundColor: AppColors.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(children: [
-          Container(width: 40, height: 40, decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), gradient: const LinearGradient(colors: [AppColors.foxOrange, AppColors.purple])), child: const Icon(Icons.music_note_rounded, color: Colors.white, size: 22)),
+          Container(width: 40, height: 40, decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), gradient: const LinearGradient(colors: AppColors.gradientMix)), child: const Icon(Icons.music_note_rounded, color: Colors.white, size: 22)),
           const SizedBox(width: 10), Expanded(child: Text(song.title, style: const TextStyle(color: AppColors.textPrimary, fontSize: 17, fontWeight: FontWeight.bold), maxLines: 2, overflow: TextOverflow.ellipsis)),
         ]),
         content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -277,16 +168,16 @@ class _HomeScreenState extends State<HomeScreen>
           _detailRow('播放次数', '${song.playCount} 次'),
           if (sizeStr.isNotEmpty) _detailRow('文件大小', sizeStr),
           if (song.lastPlayed > 0) _detailRow('上次播放', DateTime.fromMillisecondsSinceEpoch(song.lastPlayed).toString().substring(0, 19)),
-          if (isLocal) ...[const SizedBox(height: 6), Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: AppColors.glass, borderRadius: BorderRadius.circular(8)), child: Text(song.filePath, style: TextStyle(color: AppColors.textSecondary.withValues(alpha: 0.5), fontSize: 10), maxLines: 3, overflow: TextOverflow.ellipsis))],
+          if (isLocal) ...[const SizedBox(height: 6), Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: AppColors.glass, borderRadius: BorderRadius.circular(8)), child: Text(song.filePath, style: TextStyle(color: AppColors.textTertiary, fontSize: 10), maxLines: 3, overflow: TextOverflow.ellipsis))],
         ]),
-        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('关闭', style: TextStyle(color: AppColors.foxOrange)))],
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('关闭', style: TextStyle(color: AppColors.primary)))],
       ),
     );
   }
 
   Widget _detailRow(String label, String value) {
     return Padding(padding: const EdgeInsets.symmetric(vertical: 3), child: Row(children: [
-      Text('$label：', style: TextStyle(color: AppColors.textSecondary.withValues(alpha: 0.6), fontSize: 13)),
+      Text('$label：', style: TextStyle(color: AppColors.textTertiary, fontSize: 13)),
       Expanded(child: Text(value, style: const TextStyle(color: AppColors.textPrimary, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis)),
     ]));
   }
@@ -295,7 +186,7 @@ class _HomeScreenState extends State<HomeScreen>
     try {
       final lrc = await LyricParser.searchOnline(song.title, song.artist);
       if (lrc.isEmpty) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('未找到歌词'), backgroundColor: Colors.orange));
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('未找到歌词'), backgroundColor: AppColors.warning));
         return;
       }
       final lrcPath = song.filePath.replaceAll(RegExp(r'\.[^.]+$'), '.lrc');
@@ -306,9 +197,9 @@ class _HomeScreenState extends State<HomeScreen>
         return '[$min:$sec.$ms]${l.text}';
       }).join('\n');
       await File(lrcPath).writeAsString(lrcText);
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('✅ 歌词已下载: ${lrcPath.split('/').last}'), backgroundColor: Colors.green));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('✅ 歌词已下载: ${lrcPath.split('/').last}'), backgroundColor: AppColors.success));
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ 下载歌词失败: $e'), backgroundColor: Colors.red));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ 下载歌词失败: $e'), backgroundColor: AppColors.error));
     }
   }
 
@@ -321,58 +212,49 @@ class _HomeScreenState extends State<HomeScreen>
         content: Text('确定要删除「${song.title}」吗？\n此操作不可恢复。', style: const TextStyle(color: AppColors.textSecondary)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消', style: TextStyle(color: AppColors.textSecondary))),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('删除', style: TextStyle(color: Colors.redAccent))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('删除', style: TextStyle(color: AppColors.error))),
         ],
       ),
     );
     if (confirm != true) return;
     try {
-      // 优先走原生MediaStore删除（绕过分区存储限制）
       bool deleted = false;
       try {
         deleted = await const MethodChannel('com.alee.music_player/service')
             .invokeMethod<bool>('deleteFile', {'path': song.filePath}) ?? false;
       } catch (_) {}
       if (!deleted) {
-        // Dart侧降级
         final f = File(song.filePath);
-        if (await f.exists()) {
-          await f.delete();
-        }
+        if (await f.exists()) await f.delete();
         final lrcPath = song.filePath.replaceAll(RegExp(r'\.[^.]+$'), '.lrc');
         if (await File(lrcPath).exists()) await File(lrcPath).delete();
       }
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('✅ 已删除: ${song.title}'), backgroundColor: Colors.green));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('✅ 已删除: ${song.title}'), backgroundColor: AppColors.success));
         _scanMusic(forceFull: true);
       }
     } catch (e) {
       if (mounted) {
         final errMsg = e.toString();
         if (errMsg.contains('Permission') || errMsg.contains('denied') || errMsg.contains('Read-only') || errMsg.contains('errno') || errMsg.contains('No such file')) {
-          // Android 分区存储限制，File.delete() 即使文件存在也会返回 ENOENT
           showDialog(context: context, builder: (ctx) => AlertDialog(
             backgroundColor: AppColors.surface,
             title: const Text('⚠️ 无法删除', style: TextStyle(color: AppColors.textPrimary)),
-            content: const Text('Android 11+限制应用直接删除文件。\n\n已从列表移除，文件需手动删除：\n用文件管理器找到该文件手动删除即可。', style: TextStyle(color: AppColors.textSecondary)),
+            content: const Text('Android 11+限制应用直接删除文件。\n已从列表移除，文件需手动删除。', style: TextStyle(color: AppColors.textSecondary)),
             actions: [
               TextButton(onPressed: () {
-                if (mounted) {
-                  _scanMusic(forceFull: true);
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ 已从列表移除'), backgroundColor: Colors.green));
-                }
+                if (mounted) { _scanMusic(forceFull: true); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ 已从列表移除'), backgroundColor: AppColors.success)); }
                 Navigator.pop(ctx);
-              }, child: const Text('好的，从列表移除', style: TextStyle(color: AppColors.foxOrange))),
+              }, child: const Text('好的，从列表移除', style: TextStyle(color: AppColors.primary))),
             ],
           ));
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ 删除失败: $e'), backgroundColor: Colors.red));
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ 删除失败: $e'), backgroundColor: AppColors.error));
         }
       }
     }
   }
 
-  // ─── 顶部歌词显示 ───
   Widget _topLyrics() {
     return StreamBuilder<bool>(
       stream: audioHandler.player.playingStream,
@@ -381,13 +263,12 @@ class _HomeScreenState extends State<HomeScreen>
         final lyrics = audioHandler.lyrics;
         final idx = audioHandler.lyricIndex;
         if (!playing || lyrics.isEmpty || idx < 0) return const SizedBox.shrink();
-
         final cur = idx < lyrics.length ? lyrics[idx].text : '';
         final next = idx + 1 < lyrics.length ? lyrics[idx + 1].text : '';
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
           child: Column(children: [
-            Text(cur, style: const TextStyle(color: AppColors.foxOrange, fontSize: 13, fontWeight: FontWeight.w600, height: 1.3), maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
+            Text(cur, style: const TextStyle(color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.w600, height: 1.3), maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
             if (next.isNotEmpty) Text(next, style: TextStyle(color: AppColors.textSecondary.withValues(alpha: 0.4), fontSize: 11, height: 1.2), maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
           ]),
         );
@@ -402,129 +283,74 @@ class _HomeScreenState extends State<HomeScreen>
   Widget build(BuildContext context) {
     final total = (_allSongs[MusicCategory.dj]?.length ?? 0) + (_allSongs[MusicCategory.pop]?.length ?? 0);
     return Scaffold(
-      body: _NoteParticleBackground(
-        child: Column(children: [
-          _foxHeader(total),
-          if (!_showSearch) _tabBar(),
-          _topLyrics(),
-          Expanded(child: _permissionDenied ? _permView() : _loading ? _loadingView() : _error != null ? _errorView() : _showSearch ? _searchResults() : TabBarView(controller: _tabController, children: [
-            _songList(MusicCategory.dj), _songList(MusicCategory.pop), _favList(), const OnlineScreen(),
-          ])),
-          if (!_showSearch && !_permissionDenied) MiniPlayer(onTap: _openPlayer),
-        ]),
+      body: Column(children: [
+        _modernHeader(total),
+        if (!_showSearch) _modernTabBar(),
+        _topLyrics(),
+        Expanded(child: _permissionDenied ? _permView() : _loading ? _loadingView() : _error != null ? _errorView() : _showSearch ? _searchResults() : TabBarView(controller: _tabController, children: [
+          _songList(MusicCategory.dj), _songList(MusicCategory.pop), _favList(), const OnlineScreen(),
+        ])),
+        if (!_showSearch && !_permissionDenied) MiniPlayer(onTap: _openPlayer),
+      ]),
+    );
+  }
+
+  Widget _modernHeader(int total) {
+    return Container(
+      padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 8, left: 20, right: 20, bottom: 8),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter, end: Alignment.bottomCenter,
+          colors: [Color(0xFF14141E), AppColors.bg],
+        ),
       ),
-    );
-  }
-
-  Widget _foxHeader(int total) {
-    return AnimatedBuilder(
-      animation: _gradientCtrl,
-      builder: (_, __) {
-        final t = _gradientCtrl.value;
-        return Container(
-          height: 190,
-          width: double.infinity,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft, end: Alignment.bottomRight,
-              colors: [
-                Color.lerp(const Color(0xFF1A0A2E), const Color(0xFF2D1040), t)!,
-                Color.lerp(const Color(0xFF0D0D1A), const Color(0xFF1A0020), t)!,
-              ],
+      child: Column(children: [
+        Row(children: [
+          // 阿狸头像保留（小标志）
+          Container(
+            width: 44, height: 44,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: const LinearGradient(colors: AppColors.gradientMix),
+              boxShadow: [BoxShadow(color: AppColors.glowPrimary, blurRadius: 12, spreadRadius: 2)],
             ),
+            child: const Center(child: Text('🦊', style: TextStyle(fontSize: 22))),
           ),
-          child: Stack(
-            children: [
-              // 阿狸背景（装饰）
-              Positioned(right: -40, top: -30,
-                child: Transform.rotate(angle: 0.1,
-                  child: Container(width: 210, height: 170,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(20),
-                      image: const DecorationImage(image: AssetImage('assets/images/ali.jpg'), fit: BoxFit.cover, opacity: 0.2),
-                      boxShadow: [BoxShadow(color: AppColors.glowOrange.withValues(alpha: 0.2), blurRadius: 40, spreadRadius: 15)],
-                    ),
-                  ),
-                ),
-              ),
-              // 发光装饰条
-              Positioned(bottom: 0, left: 0, right: 0,
-                child: Container(height: 2,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Colors.transparent, Color.lerp(AppColors.foxOrange, AppColors.purple, t)!, AppColors.purple, Colors.transparent],
-                    ),
-                  ),
-                ),
-              ),
-              // 右下角小阿狸
-              Positioned(bottom: 8, right: 20,
-                child: Container(width: 40, height: 28,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(8),
-                    image: const DecorationImage(image: AssetImage('assets/images/ali.jpg'), fit: BoxFit.cover, opacity: 0.25),
-                  ),
-                ),
-              ),
-              SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Row(children: [
-                      // 阿狸头像 + 发光圈
-                      Container(
-                        width: 52, height: 52,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Color.lerp(AppColors.foxOrange, AppColors.purple, t)!.withValues(alpha: 0.7), width: 2.5),
-                          boxShadow: [
-                            BoxShadow(color: Color.lerp(AppColors.glowOrange, AppColors.glowPurple, t)!, blurRadius: 16, spreadRadius: 4),
-                          ],
-                          image: const DecorationImage(image: AssetImage('assets/images/ali.jpg'), fit: BoxFit.cover),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        ShaderMask(
-                          shaderCallback: (bounds) => LinearGradient(
-                            colors: [Color.lerp(AppColors.foxOrange, Colors.pink, t)!, Color.lerp(AppColors.purple, Colors.blue, t)!],
-                          ).createShader(bounds),
-                          child: const Text('🦊 狸音乐', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 1)),
-                        ),
-                        Text('$total 首 · ${_scanMode == 'full' ? '全局' : '快速'}',
-                          style: TextStyle(color: AppColors.textSecondary.withValues(alpha: 0.6), fontSize: 12)),
-                      ]),
-                      const Spacer(),
-                      _headerBtn(Icons.search_rounded, () => setState(() => _showSearch = true)),
-                      _headerBtn(Icons.settings_rounded, _openSettings),
-                      _headerBtn(Icons.refresh_rounded, () => _scanMusic(forceFull: true)),
-                    ]),
-                  ]),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
+          const SizedBox(width: 12),
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('狸音乐', style: TextStyle(color: AppColors.textPrimary, fontSize: 22, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+            Text('$total 首 · ${_scanMode == 'full' ? '全局' : '快速'}',
+              style: TextStyle(color: AppColors.textTertiary, fontSize: 12)),
+          ]),
+          const Spacer(),
+          _iconBtn(Icons.search_rounded, () => setState(() => _showSearch = true)),
+          const SizedBox(width: 4),
+          _iconBtn(Icons.tune_rounded, _openSettings),
+          const SizedBox(width: 4),
+          _iconBtn(Icons.refresh_rounded, () => _scanMusic(forceFull: true)),
+        ]),
+      ]),
     );
   }
 
-  Widget _headerBtn(IconData icon, VoidCallback onTap) {
+  Widget _iconBtn(IconData icon, VoidCallback onTap) {
     return Container(
       width: 36, height: 36,
-      margin: const EdgeInsets.only(left: 4),
       decoration: BoxDecoration(
         color: AppColors.glass,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: AppColors.glassBorder),
       ),
-      child: IconButton(icon: Icon(icon, color: AppColors.textSecondary, size: 18), onPressed: onTap, padding: EdgeInsets.zero),
+      child: IconButton(
+        icon: Icon(icon, color: AppColors.textSecondary, size: 18),
+        onPressed: onTap, padding: EdgeInsets.zero,
+      ),
     );
   }
 
-  Widget _tabBar() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+  Widget _modernTabBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
       child: Row(children: [
         _tabItem('🔥 DJ', 0, _filteredSongs[MusicCategory.dj]?.length ?? 0),
         const SizedBox(width: 6),
@@ -541,69 +367,50 @@ class _HomeScreenState extends State<HomeScreen>
     final selected = _tabController.index == index;
     return Expanded(
       child: GestureDetector(
-        onTap: () {
-          _tabController.animateTo(index);
-          setState(() {});
-        },
-        child: Container(
+        onTap: () { _tabController.animateTo(index); setState(() {}); },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
-            color: selected ? AppColors.foxOrange.withValues(alpha: 0.15) : AppColors.glass,
-            borderRadius: BorderRadius.circular(14),
+            color: selected ? AppColors.primary.withValues(alpha: 0.12) : AppColors.glass,
+            borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: selected ? AppColors.foxOrange.withValues(alpha: 0.6) : AppColors.glassBorder,
+              color: selected ? AppColors.primary.withValues(alpha: 0.5) : AppColors.glassBorder,
               width: selected ? 1.5 : 0.5,
             ),
           ),
-          foregroundDecoration: selected ? BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: [
-              BoxShadow(color: AppColors.glowOrange, blurRadius: 18, spreadRadius: 3),
-              BoxShadow(color: AppColors.foxOrange.withValues(alpha: 0.5), blurRadius: 10),
-            ],
-          ) : null,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(label, style: TextStyle(
-                color: selected ? AppColors.foxOrange : AppColors.textSecondary,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.normal,
-                fontSize: 13,
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text(label, style: TextStyle(
+              color: selected ? AppColors.primary : AppColors.textSecondary,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.normal,
+              fontSize: 13,
+            )),
+            if (count != null) ...[
+              const SizedBox(height: 2),
+              Text('$count首', style: TextStyle(
+                color: selected ? AppColors.primaryLight : AppColors.textTertiary,
+                fontSize: 11,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
               )),
-              if (count != null) ...[
-                const SizedBox(height: 2),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
-                  decoration: BoxDecoration(
-                    color: selected ? AppColors.foxOrange.withValues(alpha: 0.2) : Colors.transparent,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text('$count首', style: TextStyle(
-                    color: selected ? AppColors.foxOrange.withValues(alpha: 0.8) : AppColors.textSecondary.withValues(alpha: 0.4),
-                    fontSize: 11,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-                  )),
-                ),
-              ],
             ],
-          ),
+          ]),
         ),
       ),
     );
   }
 
   Widget _permView() => Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-    const Icon(Icons.folder_off_rounded, size: 64, color: Color(0xFF505060)),
+    const Icon(Icons.folder_off_rounded, size: 56, color: AppColors.textTertiary),
     const SizedBox(height: 16),
-    const Text('需要存储权限才能扫描音乐', style: TextStyle(color: AppColors.textSecondary, fontSize: 16)),
+    const Text('需要存储权限才能扫描音乐', style: TextStyle(color: AppColors.textSecondary, fontSize: 15)),
     const SizedBox(height: 8),
-    const Text('点击下方按钮授权后自动开始扫描', style: TextStyle(color: Color(0xFF505060), fontSize: 12)),
+    const Text('点击下方按钮授权后自动开始扫描', style: TextStyle(color: AppColors.textTertiary, fontSize: 12)),
     const SizedBox(height: 24),
     Container(
       decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: [AppColors.foxOrange, AppColors.purple]),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: AppColors.glowOrange, blurRadius: 20, spreadRadius: 2)],
+        gradient: const LinearGradient(colors: AppColors.gradientMix),
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [BoxShadow(color: AppColors.glowPrimary, blurRadius: 20, spreadRadius: 2)],
       ),
       child: ElevatedButton.icon(
         onPressed: _requestPermissionAndScan,
@@ -615,19 +422,19 @@ class _HomeScreenState extends State<HomeScreen>
   ]));
 
   Widget _loadingView() => Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-    const SizedBox(width: 40, height: 40, child: CircularProgressIndicator(color: AppColors.foxOrange)),
+    const SizedBox(width: 36, height: 36, child: CircularProgressIndicator(color: AppColors.primary)),
     const SizedBox(height: 20),
     const Text('正在扫描音乐...', style: TextStyle(color: AppColors.textSecondary)),
-    if (_scannedCount > 0) ...[const SizedBox(height: 8), Text('已扫描 $_scannedCount 首', style: TextStyle(color: Color(0xFF606070), fontSize: 12))],
-    if (_scanningDir.isNotEmpty) Text('正在扫描: $_scanningDir', style: const TextStyle(color: Color(0xFF505060), fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
+    if (_scannedCount > 0) ...[const SizedBox(height: 8), Text('已扫描 $_scannedCount 首', style: TextStyle(color: AppColors.textTertiary, fontSize: 12))],
+    if (_scanningDir.isNotEmpty) Text('正在扫描: $_scanningDir', style: const TextStyle(color: AppColors.textTertiary, fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
   ]));
 
   Widget _errorView() => Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-    const Icon(Icons.error_outline, size: 48, color: AppColors.foxOrange),
+    const Icon(Icons.error_outline, size: 48, color: AppColors.primary),
     const SizedBox(height: 12), Text(_error!, style: const TextStyle(color: AppColors.textSecondary)),
     const SizedBox(height: 16),
     Container(
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), gradient: const LinearGradient(colors: [AppColors.foxOrange, AppColors.purple])),
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), gradient: const LinearGradient(colors: AppColors.gradientMix)),
       child: ElevatedButton.icon(onPressed: _scanMusic, icon: const Icon(Icons.refresh), label: const Text('重试'), style: ElevatedButton.styleFrom(backgroundColor: Colors.transparent, shadowColor: Colors.transparent)),
     ),
   ]));
@@ -635,12 +442,12 @@ class _HomeScreenState extends State<HomeScreen>
   Widget _searchResults() {
     final all = <Song>[..._filteredSongs[MusicCategory.dj] ?? [], ..._filteredSongs[MusicCategory.pop] ?? []];
     if (all.isEmpty) return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-      Icon(Icons.search_off_rounded, size: 64, color: AppColors.textSecondary.withValues(alpha: 0.3)),
+      Icon(Icons.search_off_rounded, size: 56, color: AppColors.textTertiary),
       const SizedBox(height: 12),
-      Text('没有找到 "${_searchCtrl.text}"', style: TextStyle(color: AppColors.textSecondary.withValues(alpha: 0.5))),
+      Text('没有找到 "${_searchCtrl.text}"', style: TextStyle(color: AppColors.textTertiary)),
     ]));
     return ListView.builder(
-      padding: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.only(top: 4),
       itemCount: all.length,
       itemBuilder: (_, i) => SongTile(song: all[i], isPlaying: _isPlaying(all[i]), isFavorite: _store?.isFavorite(all[i].id) ?? false, onTap: () => _playList(all, startIndex: i), onFavorite: () => _toggleFav(all[i]), onLongPress: () => _onSongLongPress(context, all[i])),
     );
@@ -649,14 +456,14 @@ class _HomeScreenState extends State<HomeScreen>
   Widget _songList(MusicCategory cat) {
     final songs = _filteredSongs[cat] ?? [];
     if (songs.isEmpty) return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-      Icon(cat == MusicCategory.dj ? Icons.bolt_rounded : Icons.headphones_rounded, size: 64, color: AppColors.textSecondary.withValues(alpha: 0.3)),
+      Icon(cat == MusicCategory.dj ? Icons.bolt_rounded : Icons.headphones_rounded, size: 56, color: AppColors.textTertiary),
       const SizedBox(height: 12),
-      Text(cat == MusicCategory.dj ? '还没有 DJ 歌曲' : '还没有流行歌曲', style: TextStyle(color: AppColors.textSecondary.withValues(alpha: 0.5), fontSize: 16)),
+      Text(cat == MusicCategory.dj ? '还没有 DJ 歌曲' : '还没有流行歌曲', style: TextStyle(color: AppColors.textTertiary, fontSize: 15)),
     ]));
     return Column(children: [
       CategoryHeader(category: cat, count: songs.length),
       Expanded(child: ListView.builder(
-        padding: const EdgeInsets.only(top: 4),
+        padding: const EdgeInsets.only(top: 2),
         itemCount: songs.length,
         itemBuilder: (_, i) { final s = songs[i]; return SongTile(song: s, isPlaying: _isPlaying(s), isFavorite: _store?.isFavorite(s.id) ?? false, onTap: () => _playList(songs, startIndex: i), onFavorite: () => _toggleFav(s), onLongPress: () => _onSongLongPress(context, s)); },
       )),
@@ -669,13 +476,13 @@ class _HomeScreenState extends State<HomeScreen>
     final popSongs = _allSongs[MusicCategory.pop]?.where((s) => favs.contains(s.id)) ?? [];
     final list = <Song>[...djSongs, ...popSongs];
     if (list.isEmpty) return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-      Icon(Icons.star_outline_rounded, size: 64, color: AppColors.textSecondary.withValues(alpha: 0.3)),
-      const SizedBox(height: 12), const Text('还没有收藏歌曲', style: TextStyle(color: AppColors.textSecondary, fontSize: 16)),
+      Icon(Icons.star_outline_rounded, size: 56, color: AppColors.textTertiary),
+      const SizedBox(height: 12), const Text('还没有收藏歌曲', style: TextStyle(color: AppColors.textTertiary, fontSize: 15)),
     ]));
     return Column(children: [
       CategoryHeader(category: MusicCategory.dj, count: list.length),
       Expanded(child: ListView.builder(
-        padding: const EdgeInsets.only(top: 4),
+        padding: const EdgeInsets.only(top: 2),
         itemCount: list.length,
         itemBuilder: (_, i) => SongTile(song: list[i], isPlaying: _isPlaying(list[i]), isFavorite: true, onTap: () => _playList(list, startIndex: i), onFavorite: () => _toggleFav(list[i]), onLongPress: () => _onSongLongPress(context, list[i])),
       )),
