@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import '../models/song.dart';
 import 'lyric_parser.dart';
+import 'storage_manager.dart';
 
 const _channel = MethodChannel('com.alee.music_player/service');
 const _mediaChannel = MethodChannel('com.alee.music_player/media');
@@ -105,6 +106,14 @@ class AudioPlayerHandler {
     );
     _applyPlayMode(); _player.setSpeed(_speed); _player.play();
     _loadLyrics(); _startFg();
+    // 记录最近播放
+    _saveRecent();
+  }
+
+  void _saveRecent() async {
+    final s = currentSong; if (s == null) return;
+    final store = await StorageManager.instance;
+    await store.addRecentSong(s);
   }
 
   void togglePlay() { if (_player.playing) { _player.pause(); } else { _player.play(); } }

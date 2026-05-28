@@ -15,7 +15,8 @@ class StorageManager {
   static const _keySleepMinutes = 'sleep_minutes';
   static const _keyEqPreset = 'eq_preset';
   static const _keySpeed = 'playback_speed';
-  static const _keyMusicSources = 'music_sources'; // 自定义音乐源JSON列表
+  static const _keyMusicSources = 'music_sources';
+  static const _keyRecentSongs = 'recent_songs'; // 自定义音乐源JSON列表
 
   static StorageManager? _instance;
   late SharedPreferences _prefs;
@@ -136,11 +137,27 @@ class StorageManager {
 
   bool isFavorite(String songId) => getFavorites().contains(songId);
 
-  // ─────────── 播放历史 ───────────
+  // ─────────── 最近播放 ───────────
 
-  /// 记录播放（写入缓存）
-  void recordPlay(String songId) {
-    // 只更新内存中的缓存，退出时统一写入
+  List<Song> getRecentSongs() {
+    final json = _prefs.getString(_keyRecentSongs);
+    if (json == null || json.isEmpty) return [];
+    try {
+      final list = jsonDecode(json) as List;
+      return list.map((e) => Song.fromJson(e as Map<String, dynamic>)).toList();
+    } catch (_) { return []; }
+  }
+
+  Future<void> addRecentSong(Song song) async {
+    final list = getRecentSongs();
+    list.removeWhere((s) => s.id == song.id);
+    list.insert(0, song);
+    if (list.length > 30) list.removeLast();
+    await _prefs.setString(_keyRecentSongs, jsonEncode(list.map((s) => s.toJson()).toList()));
+  }
+
+  Future<void> clearRecent() async {
+    await _prefs.remove(_keyRecentSongs);
   }
 
   // ─────────── 播放器设置 ───────────

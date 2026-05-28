@@ -25,6 +25,8 @@ class _PlayerScreenState extends State<PlayerScreen> with TickerProviderStateMix
   final _lrcScroll = ScrollController();
   bool _lrcAuto = true;
   int _lastLrcIdx = -1;
+  bool _karaokeMode = false;
+  double _lrcProgress = 0.0;
 
   late final AnimationController _eqCtrl, _rotCtrl, _bgCtrl, _noteCtrl;
   final _eqBars = List.generate(16, (_) => 0.15);
@@ -36,7 +38,22 @@ class _PlayerScreenState extends State<PlayerScreen> with TickerProviderStateMix
   @override
   void initState() {
     super.initState();
-    _posSub = audioHandler.player.positionStream.listen((p) { if (mounted) { _pos = p; setState(() {}); } });
+    _posSub = audioHandler.player.positionStream.listen((p) {
+      if (mounted) {
+        _pos = p;
+        // 卡拉OK进度：当前行内进度
+        final lrc = audioHandler.lyrics;
+        final idx = audioHandler.lyricIndex;
+        if (_karaokeMode && lrc.isNotEmpty && idx >= 0 && idx < lrc.length) {
+          final curTime = lrc[idx].time.inMilliseconds.toDouble();
+          final nextTime = idx + 1 < lrc.length ? lrc[idx + 1].time.inMilliseconds.toDouble() : curTime + 5000;
+          _lrcProgress = ((p.inMilliseconds - curTime) / (nextTime - curTime)).clamp(0.0, 1.0);
+        } else {
+          _lrcProgress = 0.0;
+        }
+        setState(() {});
+      }
+    });
     audioHandler.player.durationStream.listen((d) { if (mounted) _dur = d ?? Duration.zero; });
     _sleepUi = Timer.periodic(const Duration(seconds: 1), (_) { if (mounted && audioHandler.sleepActive) setState(() {}); });
     _eqCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 500))..addListener(_eqUpdate)..repeat(reverse: true);
@@ -214,18 +231,45 @@ class _PlayerScreenState extends State<PlayerScreen> with TickerProviderStateMix
         itemCount: lrc.length,
         itemBuilder: (_, i) {
           final isCur = i == cur;
+          final textStyle = TextStyle(
+            color: isCur ? colors[0] : AppColors.textSecondary.withValues(alpha: 0.15),
+            fontSize: isCur ? 21 : 14,
+            fontWeight: isCur ? FontWeight.bold : FontWeight.normal,
+            height: 1.5,
+          );
+          Widget lyricWidget = Text(lrc[i].text, style: textStyle, textAlign: TextAlign.center);
+
+          // 卡拉OK模式：当前行用渐变色填充
+          if (isCur && _karaokeMode && _lrcProgress > 0) {
+            lyricWidget = ShaderMask(
+              shaderCallback: (bounds) => LinearGradient(
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+                colors: [
+                  colors[0],
+                  colors[0],
+                  AppColors.textSecondary.withValues(alpha: 0.15),
+                  AppColors.textSecondary.withValues(alpha: 0.15),
+                ],
+                stops: [
+                  0.0,
+                  (_lrcProgress - 0.05).clamp(0.0, 1.0),
+                  _lrcProgress.clamp(0.0, 1.0),
+                  1.0,
+                ],
+              ),
+              blendMode: BlendMode.srcIn,
+              child: Text(lrc[i].text, style: textStyle.copyWith(color: Colors.white), textAlign: TextAlign.center),
+            );
+          }
+
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 5),
             child: AnimatedDefaultTextStyle(
               duration: const Duration(milliseconds: 250),
-              style: TextStyle(
-                color: isCur ? colors[0] : AppColors.textSecondary.withValues(alpha: 0.15),
-                fontSize: isCur ? 21 : 14,
-                fontWeight: isCur ? FontWeight.bold : FontWeight.normal,
-                height: 1.5,
-              ),
+              style: textStyle,
               textAlign: TextAlign.center,
-              child: Text(lrc[i].text),
+              child: lyricWidget,
             ),
           );
         },
@@ -375,6 +419,7 @@ class _PlayerScreenState extends State<PlayerScreen> with TickerProviderStateMix
       child: Column(children: [
         Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
           _chip(Icons.lyrics_rounded, '歌词', _showLyrics, colors[0], () => setState(() => _showLyrics = !_showLyrics)),
+          _chip(_karaokeMode ? Icons.mic_rounded : Icons.mic_none_rounded, 'K歌', _karaokeMode, colors[1], () => setState(() => _karaokeMode = !_karaokeMode)),
           _chip(Icons.equalizer_rounded, audioHandler.eqPresetLabel, audioHandler.eqPreset != EqPreset.flat, colors[0], () { audioHandler.cycleEqPreset(); setState(() {}); }),
           _chip(Icons.speed_rounded, audioHandler.speedLabel, audioHandler.speed != 1.0, colors[0], () { audioHandler.cycleSpeed(); setState(() {}); }),
           _chip(audioHandler.sleepActive ? Icons.bedtime_rounded : Icons.bedtime_outlined, audioHandler.sleepTimerLabel, audioHandler.sleepActive, colors[0], () { audioHandler.cycleSleepTimer(); setState(() {}); }),
