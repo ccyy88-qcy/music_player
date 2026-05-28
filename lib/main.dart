@@ -28,6 +28,10 @@ class AppColors {
   static const textPrimary = Color(0xFFF0F0F5);
   static const textSecondary = Color(0xFF88889A);
   static const textMuted = Color(0xFF555566);
+  static const accent = Color(0xFFA855F7);
+  static const primary = Color(0xFFFF6B35);
+  static const primaryLight = Color(0xFFFF8C42);
+  static const textTertiary = Color(0xFF555566);
 
   // 装饰
   static const glass = Color(0x0AFFFFFF);

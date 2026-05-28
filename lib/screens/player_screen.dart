@@ -257,7 +257,7 @@ class _PlayerScreenState extends State<PlayerScreen> with TickerProviderStateMix
                   _lrcProgress.clamp(0.0, 1.0),
                   1.0,
                 ],
-              ),
+              ).createShader(bounds),
               blendMode: BlendMode.srcIn,
               child: Text(lrc[i].text, style: textStyle.copyWith(color: Colors.white), textAlign: TextAlign.center),
             );
