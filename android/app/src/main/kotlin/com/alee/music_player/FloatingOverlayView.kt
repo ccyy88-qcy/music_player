@@ -114,8 +114,8 @@ class FloatingOverlayView(context: Context) : View(context) {
         })
 
         btnSize = 34 * dp
-        val gap = 4 * dp
-        val rightMargin = fw - 12 * dp
+        val gap = 6 * dp
+        val rightMargin = fw - 14 * dp
         var rx = rightMargin - btnSize
         nextRect.set(rx, (fh - btnSize) / 2f, rx + btnSize, (fh + btnSize) / 2f)
         rx -= (btnSize + gap)
@@ -129,7 +129,7 @@ class FloatingOverlayView(context: Context) : View(context) {
 
     private fun _buildBtnPaths(size: Float) {
         val half = size / 2f
-        val triSize = size * 0.35f
+        val triSize = size * 0.5f
 
         prevPath.reset()
         for (i in 0..1) {
@@ -172,9 +172,9 @@ class FloatingOverlayView(context: Context) : View(context) {
             bgPaint.color = Color.parseColor("#CC121218")
             canvas.drawCircle(cx, cy, radius, bgPaint)
 
-            // 播放/暂停图标
-            btnPaint.color = Color.parseColor("#D0F0F0F5")
-            val iconSize = radius * 0.45f
+            // 实色播放/暂停图标
+            btnPaint.color = Color.parseColor("#FFFFFF")
+            val iconSize = radius * 0.55f
             val iconPath = Path().apply {
                 if (isPlaying) {
                     // 暂停两条杠
@@ -239,21 +239,23 @@ class FloatingOverlayView(context: Context) : View(context) {
                 val dt = _ellipsize(title, textPaint, maxTextW)
                 canvas.drawText(dt, titleX, artCy + 4 * d, textPaint)
 
-                // 三个按钮
+                // 三个按钮 - 实色背景+白色粗图标
                 val br = nextRect.width() / 2f
-                btnBgPaint.color = Color.parseColor("#0AFFFFFF")
+                
+                btnBgPaint.color = Color.parseColor("#40FFFFFF")
                 canvas.drawCircle(prevRect.centerX(), prevRect.centerY(), br, btnBgPaint)
-                btnPaint.color = Color.parseColor("#E0F0F0F5")
+                btnPaint.color = Color.parseColor("#FFFFFFFF")
+                btnPaint.strokeWidth = 0f
                 canvas.drawPath(prevPath, btnPaint)
 
-                btnBgPaint.color = Color.parseColor("#1AFF6B35")
+                btnBgPaint.color = Color.parseColor("#50FF6B35")
                 canvas.drawCircle(playRect.centerX(), playRect.centerY(), br, btnBgPaint)
-                btnPaint.color = Color.parseColor("#F0F0F5")
+                btnPaint.color = Color.parseColor("#FFFFFFFF")
                 canvas.drawPath(if (isPlaying) pausePath else playPath, btnPaint)
 
-                btnBgPaint.color = Color.parseColor("#0AFFFFFF")
+                btnBgPaint.color = Color.parseColor("#40FFFFFF")
                 canvas.drawCircle(nextRect.centerX(), nextRect.centerY(), br, btnBgPaint)
-                btnPaint.color = Color.parseColor("#E0F0F0F5")
+                btnPaint.color = Color.parseColor("#FFFFFFFF")
                 canvas.drawPath(nextPath, btnPaint)
             }
         }
