@@ -137,7 +137,31 @@ class _OnlineScreenState extends State<OnlineScreen> with SingleTickerProviderSt
     if (playUrl == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${song.title} - 获取播放地址失败，可能需要VIP'), backgroundColor: Colors.red, duration: const Duration(seconds: 2)),
+          SnackBar(
+            content: Text('${song.title} - 获取播放地址失败(需VIP/无该源)，正在跨源搜索替代版本...'),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+        // 手动触发跨源搜索
+        try {
+          final altUrl = await _source!.getPlayUrl(song);
+          if (altUrl != null && altUrl.startsWith('http')) {
+            String? lrcText;
+            try { lrcText = await _source!.getLyric(song); } catch (_) {}
+            audioHandler.player.stop();
+            final altSong = Song(title: song.title, artist: song.artist, filePath: altUrl, category: MusicCategory.pop);
+            audioHandler.loadSongList([altSong], startIndex: 0);
+            if (lrcText != null && lrcText.isNotEmpty) {
+              audioHandler.setOnlineLyrics(LyricParser.parse(lrcText));
+            }
+            if (mounted) Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen()));
+            setState(() => _playingId = null);
+            return;
+          }
+        } catch (_) {}
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${song.title} - 所有源都无法获取播放地址'), backgroundColor: Colors.red, duration: const Duration(seconds: 2)),
         );
       }
       setState(() => _playingId = null);
