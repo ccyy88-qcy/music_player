@@ -55,12 +55,6 @@ class MusicService : Service() {
         val nxPi = PendingIntent.getActivity(this, 3, Intent(this, MainActivity::class.java).apply { action = ACTION_NEXT; addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP) }, fl)
         val stPi = PendingIntent.getService(this, 4, Intent(this, MusicService::class.java).apply { action = ACTION_STOP }, fl)
 
-        // 使用MediaStyle实现锁屏媒体播放控件
-        val style = androidx.media.app.NotificationCompat.MediaStyle()
-            .setShowActionsInCompactView(1, 2) // 在紧凑视图显示播放/下一首
-            .setShowCancelButton(true)
-            .setCancelButtonIntent(stPi)
-
         val icon = if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(currentTitle)
@@ -69,7 +63,6 @@ class MusicService : Service() {
             .setSmallIcon(R.drawable.ic_notification)
             .setLargeIcon(BitmapFactory.decodeResource(resources, R.drawable.ic_notification))
             .setContentIntent(clickPi)
-            .setStyle(style)
             .addAction(android.R.drawable.ic_media_previous, "上一首", prPi)
             .addAction(icon, if (isPlaying) "暂停" else "播放", ppPi)
             .addAction(android.R.drawable.ic_media_next, "下一首", nxPi)
