@@ -119,7 +119,7 @@ class FloatingOverlayService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            y = (12 * dp).toInt()
+            y = (48 * dp).toInt() // 距顶部48dp，避开状态栏
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
                 layoutInDisplayCutoutMode =
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
@@ -149,10 +149,7 @@ class FloatingOverlayService : Service() {
     }
 
     private fun sendToActivity(action: String) {
-        val intent = Intent(this, MainActivity::class.java).apply {
-            this.action = action
-            addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        startActivity(intent)
+        // 直接调用MethodChannel，不启动Activity（避免切到前台）
+        try { MainActivity.mediaChannelRef?.invokeMethod(action, null) } catch (_: Exception) {}
     }
 }

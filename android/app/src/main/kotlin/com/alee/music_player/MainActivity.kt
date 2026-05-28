@@ -21,6 +21,7 @@ class MainActivity : FlutterActivity() {
         const val CHANNEL = "com.alee.music_player/service"
         const val MEDIA_CHANNEL = "com.alee.music_player/media"
         const val OVERLAY_CHANNEL = "com.alee.music_player/overlay"
+        var mediaChannelRef: MethodChannel? = null
     }
 
     private var mediaChannel: MethodChannel? = null
@@ -71,6 +72,7 @@ class MainActivity : FlutterActivity() {
             }
 
         mediaChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, MEDIA_CHANNEL)
+        mediaChannelRef = mediaChannel
         requestNotificationPermission()
     }
 

@@ -119,12 +119,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   void _playLocal(List<Song> list, {int si = 0}) { if (list.isEmpty) return; audioHandler.loadSongList(list, startIndex: si); }
 
   void _playChart(ChartSong s, int idx) async {
-    // 用QQ源搜并播
-    final qq = QQSource();
-    final playUrl = await qq.getPlayUrl(OnlineSong(
-      id: s.id, title: s.title, artist: s.artist, source: s.source, duration: s.duration, fee: s.fee,
-    ));
-    if (playUrl != null) {
+    // 聚合源搜索播放（自动跨所有源尝试）
+    final source = await getMusicSourceAsync();
+    final playUrl = await source.getPlayUrl(s);
+    if (playUrl != null && playUrl.startsWith('http')) {
       final tempSong = Song(title: s.title, artist: s.artist, filePath: playUrl, category: MusicCategory.pop);
       audioHandler.loadSongList([tempSong], startIndex: 0);
       Navigator.push(context, PageRouteBuilder(pageBuilder: (_, __, ___) => const PlayerScreen(),
