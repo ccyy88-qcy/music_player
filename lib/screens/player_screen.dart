@@ -106,7 +106,7 @@ class _PlayerScreenState extends State<PlayerScreen> with TickerProviderStateMix
   void _scrollLrc(int cur, List<LyricLine> lrc) {
     if (!_lrcAuto || cur < 0 || _lastLrcIdx == cur) return;
     _lastLrcIdx = cur;
-    final off = (cur * 58.0) - (MediaQuery.of(context).size.height * 0.1) + 50;
+    final off = (cur * 58.0) - (MediaQuery.of(context).size.height * 0.2) + 80;
     if (_lrcScroll.hasClients) _lrcScroll.animateTo(off.clamp(0.0, _lrcScroll.position.maxScrollExtent), duration: const Duration(milliseconds: 300), curve: Curves.easeOutCubic);
   }
 
@@ -224,10 +224,10 @@ class _PlayerScreenState extends State<PlayerScreen> with TickerProviderStateMix
 
   Widget _lrcView(List<LyricLine> lrc, int cur, bool dj, List<Color> colors) {
     return Column(children: [
-      const Spacer(flex: 1),
-      Expanded(flex: 8, child: ListView.builder(
+      const Spacer(flex: 2),
+      Expanded(flex: 7, child: ListView.builder(
         controller: _lrcScroll,
-        padding: EdgeInsets.symmetric(vertical: MediaQuery.of(context).size.height * 0.15),
+        padding: EdgeInsets.symmetric(vertical: MediaQuery.of(context).size.height * 0.08),
         itemCount: lrc.length,
         itemBuilder: (_, i) {
           final isCur = i == cur;
