@@ -132,15 +132,22 @@ class _OnlineScreenState extends State<OnlineScreen> with SingleTickerProviderSt
 
   Future<void> _playOnline(OnlineSong song) async {
     setState(() => _playingId = song.id);
-    var playUrl = await _source!.getPlayUrl(song);
+    String? playUrl;
+    String? playErr;
+    try {
+      playUrl = await _source!.getPlayUrl(song);
+    } catch (e) {
+      playErr = e.toString();
+    }
     // 失败时主动跨源搜索替代版本
-    if (playUrl == null && song.fee > 0) {
-      playUrl = await _searchAltUrl(song);
+    if ((playUrl == null) && (song.fee > 0 || playErr != null)) {
+      try { playUrl = await _searchAltUrl(song); } catch (_) {}
     }
     if (playUrl == null) {
       if (mounted) {
+        final msg = playErr != null ? '${song.title} - $playErr' : '${song.title} - 无可用播放源(需VIP)';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${song.title} - 无法获取播放地址'), backgroundColor: Colors.red, duration: const Duration(seconds: 2)),
+          SnackBar(content: Text(msg), backgroundColor: Colors.red, duration: const Duration(seconds: 4)),
         );
       }
       setState(() => _playingId = null);

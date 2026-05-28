@@ -234,7 +234,9 @@ class QQSource extends MusicSource {
           if (purl != null && purl.isNotEmpty) return 'http://ws.stream.qqmusic.qq.com/$purl';
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      // QQ getPlayUrl error
+    }
     return null;
   }
 
