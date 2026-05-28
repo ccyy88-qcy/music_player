@@ -3,7 +3,6 @@ package com.alee.music_player
 import android.app.Service
 import android.content.Intent
 import android.graphics.PixelFormat
-import android.os.Build
 import android.os.IBinder
 import android.view.Gravity
 import android.view.WindowManager
@@ -83,8 +82,10 @@ class FloatingOverlayService : Service() {
 
         val dm = resources.displayMetrics
         val dp = dm.density
-        val width = dm.widthPixels
-        val heightPx = (60 * dp).toInt()
+
+        // 居中长方形：85%屏幕宽度，50dp高度
+        val widthPx = (dm.widthPixels * 0.85).toInt()
+        val heightPx = (50 * dp).toInt()
 
         overlayView = FloatingOverlayView(this).apply {
             onPlayPause = { sendToActivity("playPause") }
@@ -97,16 +98,15 @@ class FloatingOverlayService : Service() {
                 or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN)
 
         overlayLp = WindowManager.LayoutParams(
-            width,
+            widthPx,
             heightPx,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             flags,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = 0
-            y = 0
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            y = (12 * dp).toInt() // 距顶部12dp
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
                 layoutInDisplayCutoutMode =
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             }
