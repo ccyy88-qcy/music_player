@@ -26,6 +26,7 @@ class _PlayerScreenState extends State<PlayerScreen> with TickerProviderStateMix
   bool _lrcAuto = true;
   int _lastLrcIdx = -1;
   bool _karaokeMode = false;
+  bool _singleLineLrc = false;
   double _lrcProgress = 0.0;
 
   late final AnimationController _eqCtrl, _rotCtrl, _bgCtrl, _noteCtrl;
@@ -223,6 +224,7 @@ class _PlayerScreenState extends State<PlayerScreen> with TickerProviderStateMix
   }
 
   Widget _lrcView(List<LyricLine> lrc, int cur, bool dj, List<Color> colors) {
+    if (_singleLineLrc) return _singleLineLrcView(lrc, cur, dj, colors);
     return Column(children: [
       const Spacer(flex: 2),
       Expanded(flex: 7, child: ListView.builder(
@@ -283,6 +285,52 @@ class _PlayerScreenState extends State<PlayerScreen> with TickerProviderStateMix
       )),
       const Spacer(flex: 1),
     ]);
+  }
+
+  /// 单行独立歌词显示
+  Widget _singleLineLrcView(List<LyricLine> lrc, int cur, bool dj, List<Color> colors) {
+    if (cur < 0 || cur >= lrc.length) {
+      return const Center(child: Text('♪', style: TextStyle(color: AppColors.textMuted, fontSize: 48)));
+    }
+    final prev = cur > 0 ? lrc[cur - 1].text : '';
+    final curr = lrc[cur].text;
+    final next = cur + 1 < lrc.length ? lrc[cur + 1].text : '';
+    final progress = _lrcProgress.clamp(0.0, 1.0);
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 40),
+        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          // 上一行(淡出)
+          if (prev.isNotEmpty) Padding(
+            padding: const EdgeInsets.only(bottom: 20),
+            child: Text(prev, style: TextStyle(color: AppColors.textSecondary.withValues(alpha: 0.12), fontSize: 15, height: 1.4),
+              textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+          // 当前行(大号, 卡拉OK渐变)
+          ShaderMask(
+            shaderCallback: (bounds) => LinearGradient(
+              begin: Alignment.centerLeft, end: Alignment.centerRight,
+              colors: [
+                colors[0], colors[0],
+                AppColors.textSecondary.withValues(alpha: 0.15),
+                AppColors.textSecondary.withValues(alpha: 0.15),
+              ],
+              stops: [0.0, (progress - 0.1).clamp(0.0, 1.0), progress.clamp(0.0, 1.0), 1.0],
+            ).createShader(bounds),
+            blendMode: BlendMode.srcIn,
+            child: Text(curr, style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w700, height: 1.5),
+              textAlign: TextAlign.center),
+          ),
+          // 下一行(淡入)
+          if (next.isNotEmpty) Padding(
+            padding: const EdgeInsets.only(top: 20),
+            child: Text(next, style: TextStyle(color: AppColors.textSecondary.withValues(alpha: 0.12), fontSize: 15, height: 1.4),
+              textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+        ]),
+      ),
+    );
   }
 
   Widget _info(Song? s, bool dj, List<Color> colors) {
@@ -427,6 +475,7 @@ class _PlayerScreenState extends State<PlayerScreen> with TickerProviderStateMix
         Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
           _chip(Icons.lyrics_rounded, '歌词', _showLyrics, colors[0], () => setState(() => _showLyrics = !_showLyrics)),
           _chip(_karaokeMode ? Icons.mic_rounded : Icons.mic_none_rounded, 'K歌', _karaokeMode, colors[1], () => setState(() => _karaokeMode = !_karaokeMode)),
+          _chip(Icons.text_snippet_rounded, '单行', _singleLineLrc, colors[2], () => setState(() => _singleLineLrc = !_singleLineLrc)),
           _chip(Icons.equalizer_rounded, audioHandler.eqPresetLabel, audioHandler.eqPreset != EqPreset.flat, colors[0], () { audioHandler.cycleEqPreset(); setState(() {}); }),
           _chip(Icons.speed_rounded, audioHandler.speedLabel, audioHandler.speed != 1.0, colors[0], () { audioHandler.cycleSpeed(); setState(() {}); }),
           _chip(audioHandler.sleepActive ? Icons.bedtime_rounded : Icons.bedtime_outlined, audioHandler.sleepTimerLabel, audioHandler.sleepActive, colors[0], () { audioHandler.cycleSleepTimer(); setState(() {}); }),

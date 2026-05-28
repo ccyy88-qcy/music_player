@@ -287,62 +287,39 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         ]),
       ),
       SizedBox(
-        height: 156,
+        height: 230,
         child: ListView.builder(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          itemCount: _hotSongs.length,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          itemCount: _hotSongs.length > 10 ? 10 : _hotSongs.length,
           itemBuilder: (_, i) {
             final s = _hotSongs[i];
             return GestureDetector(
               onTap: () => _playChart(s, i),
               child: Container(
-                width: 120,
-                margin: const EdgeInsets.only(right: 10),
-                child: Column(children: [
-                  // 排名封面(真实封面图)
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Stack(children: [
-                      SizedBox(
-                        width: 120, height: 120,
-                        child: s.coverUrl != null && s.coverUrl!.isNotEmpty
-                            ? Image.network(s.coverUrl!, fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => _defaultChartCover(s),
-                                loadingBuilder: (_, child, progress) {
-                                  if (progress == null) return child;
-                                  return _defaultChartCover(s);
-                                },
-                              )
-                            : _defaultChartCover(s),
-                      ),
-                      // 排名角标
-                      Positioned(
-                        top: 6, left: 6,
-                        child: Container(
-                          width: 26, height: 26,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: s.rank <= 3
-                                ? (s.rank == 1 ? AppColors.yellow : (s.rank == 2 ? AppColors.orange : AppColors.red))
-                                : Colors.black.withValues(alpha: 0.5),
-                          ),
-                          child: Center(child: Text('${s.rank}',
-                            style: TextStyle(
-                              color: s.rank <= 3 ? Colors.black : Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          )),
-                        ),
-                      ),
-                    ]),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                child: Row(children: [
+                  // 排名
+                  Container(
+                    width: 22, height: 22,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: s.rank <= 3
+                          ? (s.rank == 1 ? AppColors.yellow : (s.rank == 2 ? AppColors.orange : AppColors.red))
+                          : Colors.transparent,
+                    ),
+                    child: Center(child: Text('${s.rank}',
+                      style: TextStyle(
+                        color: s.rank <= 3 ? Colors.black : AppColors.textMuted,
+                        fontSize: 11, fontWeight: FontWeight.w700),
+                    )),
                   ),
-                  const SizedBox(height: 6),
-                  Text(s.title, style: const TextStyle(color: AppColors.textPrimary, fontSize: 12, fontWeight: FontWeight.w500),
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
-                  Text(s.artist, style: const TextStyle(color: AppColors.textMuted, fontSize: 10),
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                  const SizedBox(width: 10),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(s.title, style: const TextStyle(color: AppColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w500),
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text(s.artist, style: const TextStyle(color: AppColors.textMuted, fontSize: 11),
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ])),
                 ]),
               ),
             );

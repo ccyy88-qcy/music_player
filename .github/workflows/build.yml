@@ -49,6 +49,13 @@ jobs:
           mv tmp_project music_player_app
           cd music_player_app
 
+      - name: Add media dependency
+        run: |
+          cd music_player_app
+          echo "dependencies {" >> android/app/build.gradle
+          echo "    implementation 'androidx.media:media:1.7.0'" >> android/app/build.gradle
+          echo "}" >> android/app/build.gradle
+
       - name: Generate keystore
         run: |
           cd music_player_app
