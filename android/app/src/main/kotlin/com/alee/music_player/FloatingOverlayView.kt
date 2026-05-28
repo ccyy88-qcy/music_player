@@ -28,13 +28,14 @@ class FloatingOverlayView(context: Context) : View(context) {
     private val handler = Handler(Looper.getMainLooper())
     private val collapseDelayMs = 5000L
     private val collapseRunnable = Runnable { toggleCollapse() }
+    private var currentY = 48 // 当前Y偏移(dp)
 
     fun toggleCollapse() {
         collapsed = !collapsed
         handler.removeCallbacks(collapseRunnable)
         if (!collapsed) handler.postDelayed(collapseRunnable, collapseDelayMs)
-        val (w, h) = if (collapsed) Pair(CIRCLE_SIZE, CIRCLE_SIZE) else Pair(BAR_WIDTH, BAR_HEIGHT)
-        onResize?.invoke(w, h)
+        val (w, h, yOff) = if (collapsed) Triple(CIRCLE_SIZE, CIRCLE_SIZE, currentY) else Triple(BAR_WIDTH, BAR_HEIGHT, currentY + 32)
+        onResize?.invoke(w, h, yOff)
         postInvalidate()
     }
 
@@ -45,7 +46,7 @@ class FloatingOverlayView(context: Context) : View(context) {
     private val dp: Float get() = resources.displayMetrics.density
 
     companion object {
-        const val CIRCLE_SIZE = 36; const val BAR_HEIGHT = 50; const val BAR_WIDTH = 85
+        const val CIRCLE_SIZE = 36; const val BAR_HEIGHT = 60; const val BAR_WIDTH = 85
     }
 
     // 系统标准媒体图标

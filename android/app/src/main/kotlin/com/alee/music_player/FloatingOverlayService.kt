@@ -77,7 +77,7 @@ class FloatingOverlayService : Service() {
         }
     }
 
-    private fun resizeOverlay(widthDp: Int, heightDp: Int) {
+    private fun resizeOverlay(widthDp: Int, heightDp: Int, yOffsetDp: Int) {
         val dm = resources.displayMetrics
         val dp = dm.density
         val w = if (widthDp == FloatingOverlayView.CIRCLE_SIZE) {
@@ -89,6 +89,7 @@ class FloatingOverlayService : Service() {
         overlayLp?.let { lp ->
             lp.width = w
             lp.height = h
+            lp.y = (yOffsetDp * dp).toInt()
             try { wm?.updateViewLayout(overlayView, lp) } catch (_: Exception) {}
         }
     }
@@ -104,7 +105,7 @@ class FloatingOverlayService : Service() {
             onPlayPause = { sendToActivity("playPause") }
             onNext = { sendToActivity("next") }
             onPrev = { sendToActivity("prev") }
-            onResize = { wDp, hDp -> resizeOverlay(wDp, hDp) }
+            onResize = { wDp, hDp, yOff -> resizeOverlay(wDp, hDp, yOff) }
         }
 
         val flags = (WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
