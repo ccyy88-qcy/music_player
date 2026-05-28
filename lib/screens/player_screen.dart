@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../models/song.dart';
 import '../services/audio_handler.dart';
 import '../services/lyric_parser.dart';
@@ -39,6 +40,14 @@ class _PlayerScreenState extends State<PlayerScreen> with TickerProviderStateMix
   @override
   void initState() {
     super.initState();
+    // 全屏沉浸模式
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
+      systemNavigationBarColor: Colors.transparent,
+      systemNavigationBarIconBrightness: Brightness.light,
+    ));
     _posSub = audioHandler.player.positionStream.listen((p) {
       if (mounted) {
         _pos = p;
@@ -125,6 +134,7 @@ class _PlayerScreenState extends State<PlayerScreen> with TickerProviderStateMix
         final t = _bgCtrl.value;
         final c1 = Color.lerp(colors[0], colors[1], t)!;
         final c2 = Color.lerp(colors[1], colors[2], t)!;
+        final safeTop = MediaQuery.of(context).padding.top;
         return Container(
           decoration: BoxDecoration(
             gradient: RadialGradient(
@@ -133,12 +143,29 @@ class _PlayerScreenState extends State<PlayerScreen> with TickerProviderStateMix
             ),
           ),
           child: Stack(children: [
-            // 浮动音符
+            // 背景延伸到最顶部（刘海区）
             Positioned.fill(child: IgnorePointer(child: CustomPaint(
               painter: _NotePainter(_notes, audioHandler.player.playing, colors),
               size: Size.infinite,
             ))),
-            SafeArea(
+            // 顶部渐变遮罩（状态栏区域和背景融合）
+            Positioned(top: 0, left: 0, right: 0, height: safeTop + 60,
+              child: IgnorePointer(child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                    colors: [
+                      AppColors.bg.withValues(alpha: 0.6),
+                      AppColors.bg.withValues(alpha: 0.3),
+                      Colors.transparent,
+                    ],
+                  ),
+                ),
+              )),
+            ),
+            // 主内容（在安全区内）
+            Padding(
+              padding: EdgeInsets.only(top: safeTop),
               child: Column(children: [
                 _top(dj, colors),
                 Expanded(child: _showLyrics && lrc.isNotEmpty ? _lrcView(lrc, lrcI, dj, colors) : _albumArt(dj, colors, c1, c2)),
@@ -159,7 +186,15 @@ class _PlayerScreenState extends State<PlayerScreen> with TickerProviderStateMix
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
       child: Row(children: [
-        IconButton(icon: const Icon(Icons.keyboard_arrow_down_rounded, color: AppColors.textPrimary, size: 30), onPressed: () => Navigator.pop(context)),
+        IconButton(icon: const Icon(Icons.keyboard_arrow_down_rounded, color: AppColors.textPrimary, size: 30), onPressed: () {
+          // 退出全屏模式
+          SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+          SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+            statusBarColor: Colors.transparent,
+            statusBarIconBrightness: Brightness.light,
+          ));
+          Navigator.pop(context);
+        }),
         const Spacer(),
         if (audioHandler.sleepActive)
           Container(
