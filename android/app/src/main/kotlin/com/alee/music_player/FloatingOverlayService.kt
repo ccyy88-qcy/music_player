@@ -1,20 +1,16 @@
 package com.alee.music_player
 
-import android.app.*
-import android.content.Context
+import android.app.Service
 import android.content.Intent
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
 import android.view.Gravity
 import android.view.WindowManager
-import androidx.core.app.NotificationCompat
 
 class FloatingOverlayService : Service() {
 
     companion object {
-        const val CHANNEL_ID = "floating_overlay"
-        const val NOTIFY_ID = 2002
         const val ACTION_SHOW = "com.alee.music_player.OVERLAY_SHOW"
         const val ACTION_HIDE = "com.alee.music_player.OVERLAY_HIDE"
         const val ACTION_UPDATE = "com.alee.music_player.OVERLAY_UPDATE"
@@ -22,7 +18,6 @@ class FloatingOverlayService : Service() {
         var isVisible = false
             private set
 
-        // 当前状态
         internal var currentTitle = "狸音乐"
         internal var currentArtist = ""
         internal var currentPlaying = false
@@ -37,7 +32,6 @@ class FloatingOverlayService : Service() {
     override fun onCreate() {
         super.onCreate()
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
-        createNotificationChannel()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -82,8 +76,6 @@ class FloatingOverlayService : Service() {
             v.durationMs = currentDurationMs
             v.postInvalidate()
         }
-        // 更新前台通知
-        startForeground(NOTIFY_ID, buildNotification())
     }
 
     private fun createOverlay() {
@@ -123,8 +115,6 @@ class FloatingOverlayService : Service() {
         try {
             wm?.addView(overlayView, overlayLp)
             isVisible = true
-            // 前台通知
-            startForeground(NOTIFY_ID, buildNotification())
         } catch (_: Exception) {
             isVisible = false
         }
@@ -141,7 +131,6 @@ class FloatingOverlayService : Service() {
 
     private fun hideOverlay() {
         removeOverlay()
-        stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
@@ -151,37 +140,5 @@ class FloatingOverlayService : Service() {
             addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
         startActivity(intent)
-    }
-
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
-                .createNotificationChannel(NotificationChannel(CHANNEL_ID, "悬浮窗", NotificationManager.IMPORTANCE_LOW).apply {
-                    description = "悬浮窗控制"
-                    setShowBadge(false)
-                    setSound(null, null)
-                })
-        }
-    }
-
-    private fun buildNotification(): Notification {
-        val fl = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
-        val clickPi = PendingIntent.getActivity(this, 10, Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
-        }, fl)
-        val hidePi = PendingIntent.getService(this, 11, Intent(this, FloatingOverlayService::class.java).apply {
-            action = ACTION_HIDE
-        }, fl)
-
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("狸音乐 · 悬浮窗")
-            .setContentText(currentTitle)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentIntent(clickPi)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "隐藏", hidePi)
-            .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setSilent(true)
-            .build()
     }
 }

@@ -99,6 +99,7 @@ class AudioPlayerHandler {
     final s = currentSong;
     if (s == null) return;
     try { _channel.invokeMethod('start', {'title': s.title, 'artist': s.artist.isNotEmpty ? s.artist : '狸音乐', 'playing': true}); } catch (_) {}
+    _showOverlay();
   }
   void _stopFg() { try { _channel.invokeMethod('stop'); } catch (_) {} _hideOverlay(); }
 

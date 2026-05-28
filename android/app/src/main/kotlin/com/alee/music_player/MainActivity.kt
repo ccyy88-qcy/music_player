@@ -187,7 +187,7 @@ class MainActivity : FlutterActivity() {
             putExtra("positionMs", call.argument<Int>("positionMs")?.toLong() ?: 0L)
             putExtra("durationMs", call.argument<Int>("durationMs")?.toLong() ?: 0L)
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent) else startService(intent)
+        startService(intent)
     }
 
     private fun updateOverlay(call: io.flutter.plugin.common.MethodCall) {
