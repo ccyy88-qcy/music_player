@@ -27,7 +27,7 @@ class FloatingOverlayView(context: Context) : View(context) {
     // ===== 状态 =====
     var collapsed = true
     private val handler = Handler(Looper.getMainLooper())
-    private val collapseDelayMs = 3000L
+    private val collapseDelayMs = 5000L
     private val collapseRunnable = Runnable { toggleCollapse() }
 
     fun toggleCollapse() {
