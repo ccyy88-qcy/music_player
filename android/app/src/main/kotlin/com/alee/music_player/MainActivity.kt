@@ -155,7 +155,8 @@ class MainActivity : FlutterActivity() {
                 "heavyBass" -> shortArrayOf(1000, 700, 300, 100, 0)
                 else -> shortArrayOf(0, 0, 0, 0, 0)
             }
-            for (i in 0 until if (bands < settings.size) bands else settings.size) {
+            val bandCount = bands.toInt()
+            for (i in 0 until if (bandCount < settings.size) bandCount else settings.size) {
                 eq.setBandLevel(i.toShort(), settings[i])
             }
         } catch (_: Exception) {}
