@@ -4,12 +4,10 @@ import android.app.*
 import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
+import android.media.session.MediaSession
+import android.media.session.PlaybackState
 import android.os.Build
-import android.os.Bundle
 import android.os.IBinder
-import androidx.media.MediaMetadataCompat
-import androidx.media.session.MediaSessionCompat
-import androidx.media.session.PlaybackStateCompat
 import androidx.core.app.NotificationCompat
 
 class MusicService : Service() {
@@ -25,23 +23,21 @@ class MusicService : Service() {
 
         var isRunning = false
         var isPlaying = true
-        var currentTitle = "��音乐"
+        var currentTitle = "狸音乐"
         var currentArtist = ""
         var currentPositionMs = 0L
         var currentDurationMs = 0L
     }
 
-    private lateinit var mediaSession: MediaSessionCompat
+    private var mediaSession: MediaSession? = null
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        initMediaSession()
-    }
-
-    private fun initMediaSession() {
-        mediaSession = MediaSessionCompat(this, "MusicService")
-        mediaSession.setCallback(object : MediaSessionCompat.Callback() {
+        // 创建 MediaSession — Android框架内置，无需额外依赖
+        // Android 11+ 只要有活跃的MediaSession，系统自动在锁屏显示播放控件
+        mediaSession = MediaSession(this, "MusicService")
+        mediaSession?.setCallback(object : MediaSession.Callback() {
             override fun onPlay() { sendAction("playPause") }
             override fun onPause() { sendAction("playPause") }
             override fun onPlayPause() { sendAction("playPause") }
@@ -62,7 +58,7 @@ class MusicService : Service() {
                 isRunning = false
             }
         })
-        mediaSession.isActive = true
+        mediaSession?.isActive = true
     }
 
     private fun sendAction(action: String) {
@@ -81,8 +77,8 @@ class MusicService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
-            mediaSession.isActive = false
-            mediaSession.release()
+            mediaSession?.isActive = false
+            mediaSession?.release()
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             isRunning = false
@@ -95,7 +91,7 @@ class MusicService : Service() {
         if (intent?.hasExtra("positionMs") == true) currentPositionMs = intent.getLongExtra("positionMs", 0L)
         if (intent?.hasExtra("durationMs") == true) currentDurationMs = intent.getLongExtra("durationMs", 0L)
 
-        // 更新 MediaSession 元数据和播放状态
+        // 更新MediaSession — 系统自动在锁屏/通知栏显示播放控件+进度
         updateMediaSession(currentTitle, currentArtist, isPlaying, currentPositionMs, currentDurationMs)
 
         startForeground(NOTIFY_ID, buildNotification())
@@ -104,35 +100,37 @@ class MusicService : Service() {
     }
 
     private fun updateMediaSession(title: String, artist: String, playing: Boolean, posMs: Long, durMs: Long) {
-        // 元数据
-        val metadata = MediaMetadataCompat.Builder()
-            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
-            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, artist.ifEmpty { "��音乐" })
-            .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, durMs)
-            .build()
-        mediaSession.setMetadata(metadata)
+        val session = mediaSession ?: return
 
-        // 播放状态（含进度）
-        val state = if (playing) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED
-        val actions = PlaybackStateCompat.ACTION_PLAY_PAUSE or
-                PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
-                PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
-                PlaybackStateCompat.ACTION_SEEK_TO or
-                PlaybackStateCompat.ACTION_PLAY or
-                PlaybackStateCompat.ACTION_PAUSE or
-                PlaybackStateCompat.ACTION_STOP
-        val playbackState = PlaybackStateCompat.Builder()
-            .setState(state, posMs, 1.0f)
-            .setActions(actions)
-            .build()
-        mediaSession.setPlaybackState(playbackState)
+        session.setMetadata(
+            android.media.MediaMetadata.Builder()
+                .putString(android.media.MediaMetadata.METADATA_KEY_TITLE, title)
+                .putString(android.media.MediaMetadata.METADATA_KEY_ARTIST, artist.ifEmpty { "狸音乐" })
+                .putLong(android.media.MediaMetadata.METADATA_KEY_DURATION, durMs)
+                .build()
+        )
+
+        val state = if (playing) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED
+        val actions = PlaybackState.ACTION_PLAY_PAUSE or
+                PlaybackState.ACTION_SKIP_TO_NEXT or
+                PlaybackState.ACTION_SKIP_TO_PREVIOUS or
+                PlaybackState.ACTION_SEEK_TO or
+                PlaybackState.ACTION_PLAY or
+                PlaybackState.ACTION_PAUSE or
+                PlaybackState.ACTION_STOP
+        session.setPlaybackState(
+            PlaybackState.Builder()
+                .setState(state, posMs, 1.0f)
+                .setActions(actions)
+                .build()
+        )
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
         isRunning = false
-        try { mediaSession.isActive = false; mediaSession.release() } catch (_: Exception) {}
+        try { mediaSession?.isActive = false; mediaSession?.release() } catch (_: Exception) {}
         super.onDestroy()
     }
 
@@ -164,14 +162,7 @@ class MusicService : Service() {
 
         val icon = if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
 
-        // MediaStyle 锁屏通知
-        val style = androidx.media.app.NotificationCompat.MediaStyle()
-            .setMediaSession(mediaSession.sessionToken)
-            .setShowActionsInCompactView(0, 1, 2)
-            .setShowCancelButton(true)
-
-        // 手动添加进度（兼容所有Android版本）
-        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
+        return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(currentTitle)
             .setContentText(currentArtist)
             .setSubText(if (isPlaying) "正在播放" else "已暂停")
@@ -185,17 +176,12 @@ class MusicService : Service() {
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setSilent(true)
-            .setStyle(style)
-
-        // 手动进度（用于通知栏下拉时显示，锁屏自动由MediaSession提供）
-        if (currentDurationMs > 0) {
-            builder.setProgress(
-                currentDurationMs.toInt(),
+            // 手动进度条
+            .setProgress(
+                if (currentDurationMs > 0) currentDurationMs.toInt() else 0,
                 currentPositionMs.toInt(),
                 false
             )
-        }
-
-        return builder.build()
+            .build()
     }
 }
