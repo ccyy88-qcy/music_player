@@ -295,14 +295,33 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
                         if (s.rank <= 3) BoxShadow(color: AppColors.orange.withValues(alpha: 0.2), blurRadius: 10),
                       ],
                     ),
-                    child: Center(child: Text(
-                      '${s.rank}',
-                      style: TextStyle(
-                        color: s.rank <= 3 ? Colors.white : AppColors.textMuted,
-                        fontSize: s.rank <= 3 ? 24 : 20,
-                        fontWeight: FontWeight.w700,
+                    child: Stack(children: [
+                      Center(child: Icon(
+                        Icons.music_note_rounded,
+                        color: Colors.white.withValues(alpha: s.rank <= 3 ? 0.3 : 0.1),
+                        size: 48,
+                      )),
+                      // 排名角标
+                      Positioned(
+                        top: 6, left: 6,
+                        child: Container(
+                          width: 24, height: 24,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: s.rank <= 3
+                                ? (s.rank == 1 ? AppColors.yellow : (s.rank == 2 ? AppColors.orange : AppColors.red))
+                                : AppColors.textMuted.withValues(alpha: 0.3),
+                          ),
+                          child: Center(child: Text('${s.rank}',
+                            style: TextStyle(
+                              color: s.rank <= 3 ? Colors.black : Colors.white.withValues(alpha: 0.6),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          )),
+                        ),
                       ),
-                    )),
+                    ]),
                   ),
                   const SizedBox(height: 6),
                   Text(s.title, style: const TextStyle(color: AppColors.textPrimary, fontSize: 12, fontWeight: FontWeight.w500),
