@@ -629,12 +629,18 @@ class DownloadManager {
         }
         if (resp.statusCode != 200) return null;
         final bytes = await resp.stream.toBytes();
-        if (bytes.length < 1000) return null;
+        if (bytes.length < 200) return null; // 太小的文件肯定是错的
+        // 放宽格式检查：支持所有常见音频格式
         if (bytes.length > 4) {
-          final isAudio = (bytes[0] == 0x49 && bytes[1] == 0x44 && bytes[2] == 0x33) ||
-              (bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0) ||
-              (bytes[0] == 0x66 && bytes[1] == 0x4C && bytes[2] == 0x61 && bytes[3] == 0x43) ||
-              (bytes.length > 8 && bytes[4] == 0x66 && bytes[5] == 0x74 && bytes[6] == 0x79 && bytes[7] == 0x70);
+          final isAudio = bytes.length >= 3 && (bytes[0] == 0x49 && bytes[1] == 0x44 && bytes[2] == 0x33) || // ID3 (MP3带标签)
+              (bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0) || // MP3
+              (bytes.length >= 4 && bytes[0] == 0x66 && bytes[1] == 0x4C && bytes[2] == 0x61 && bytes[3] == 0x43) || // FLAC (fLaC)
+              (bytes.length >= 8 && bytes[4] == 0x66 && bytes[5] == 0x74 && bytes[6] == 0x79 && bytes[7] == 0x70) || // M4A/MP4 (ftyp)
+              (bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46) || // WAV (RIFF)
+              (bytes[0] == 0x4F && bytes[1] == 0x67 && bytes[2] == 0x67 && bytes[3] == 0x53) || // OGG (OggS)
+              (bytes[0] == 0x1A && bytes[1] == 0x45 && bytes[2] == 0xDF && bytes[3] == 0xA3) || // WebM
+              (bytes.length >= 6 && bytes[0] == 0x00 && bytes[1] == 0x00 && bytes[2] == 0x00 && bytes[3] == 0x20 && bytes[4] == 0x66 && bytes[5] == 0x74) || // M4A变体
+              (bytes[0] == 0x4D && bytes[1] == 0x54 && bytes[2] == 0x68 && bytes[3] == 0x64); // MIDI (MThd)
           if (!isAudio) return null;
         }
         await File(path).writeAsBytes(bytes);

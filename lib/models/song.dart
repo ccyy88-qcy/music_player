@@ -14,7 +14,8 @@ const audioExtensions = [
   '.mp3', '.wav', '.flac', '.aac', '.ogg', '.m4a', '.wma',
   '.opus', '.aiff', '.alac', '.ape', '.wv', '.tta', '.mp2',
   '.ac3', '.dts', '.amr', '.mid', '.midi', '.ra', '.mpc',
-  '.spx', '.caf', '.au', '.pcm',
+  '.spx', '.caf', '.au', '.pcm', '.aif', '.mka', '.3gp',
+  '.weba', '.webm',
 ];
 
 /// 跳过的系统目录
