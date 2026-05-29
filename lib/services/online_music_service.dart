@@ -133,22 +133,22 @@ class NeteaseSource extends MusicSource {
   }
 
   @override Future<String?> getPlayUrl(OnlineSong song) async {
-    // 1. EAPI加密调用（成功率最高，支持320k无损）
+    // 1. EAPI加密调用（interface3，LX Music用的端点）
     try {
-      final path = '/api/song/enhance/player/url/v1';
+      final path = '/api/song/enhance/player/url';
       final body = jsonEncode({
         'ids': jsonEncode([song.id]),
-        'level': 'exhigh',
+        'br': song.fee > 0 ? 128000 : 320000, // VIP歌用128k
         'encodeType': 'mp3',
       });
       final params = eapiEncrypt(path, body);
       final resp = await http.post(
-        Uri.parse('https://interface.music.163.com/eapi/song/enhance/player/url/v1'),
+        Uri.parse('https://interface3.music.163.com/eapi/song/enhance/player/url'),
         headers: {
           'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36',
           'Referer': 'https://music.163.com/',
           'Content-Type': 'application/x-www-form-urlencoded',
-          'Cookie': 'NMTID=00OKlEq2nVNMgNF05CFI1JjHgQehWAAAQJZovaw',
+          'Cookie': 'NMTID=00OKlEq2nVNMgNF05CFI1JjHgQehWAAAQJZovaw; os=pc',
         },
         body: {'params': params},
       ).timeout(const Duration(seconds: 8));
@@ -157,14 +157,16 @@ class NeteaseSource extends MusicSource {
         final data = d['data'] as List?;
         if (data != null && data.isNotEmpty) {
           final urlStr = data[0]['url'];
-          if (urlStr != null && urlStr.toString().startsWith('http')) {
+          final freeTrialInfo = data[0]['freeTrialInfo'];
+          // 跳过免费试听片段（VIP歌曲会返回freeTrialInfo）
+          if (urlStr != null && urlStr.toString().startsWith('http') && freeTrialInfo == null) {
             return urlStr.toString().split('?')[0];
           }
         }
       }
     } catch (_) {}
 
-    // 2. 降级：公共enhance API
+    // 2. 降级：原来的公共enhance API
     try {
       final url = 'https://music.163.com/api/song/enhance/player/url?id=${song.id}&ids=%5B${song.id}%5D&br=320000';
       final resp = await http.get(Uri.parse(url), headers: _h()).timeout(const Duration(seconds: 5));
@@ -282,7 +284,23 @@ class KugouSource extends MusicSource {
   }
 
   @override Future<String?> getPlayUrl(OnlineSong song) async {
-    // 酷狗v2 tracker API
+    // LX Music方式：wwwapi.kugou.com + getdata
+    try {
+      final albumId = song.album.isNotEmpty ? song.album : '0';
+      final url = 'https://wwwapi.kugou.com/yy/index.php?r=play/getdata&hash=${song.id}&platid=4&album_id=$albumId&mid=00000000000000000000000000000000';
+      final resp = await http.get(Uri.parse(url), headers: _h()).timeout(const Duration(seconds: 5));
+      if (resp.statusCode == 200) {
+        final d = jsonDecode(resp.body);
+        if (d['status'] != 1) return null;
+        if ((d['data']?['privilege'] as int? ?? 0) > 9) return null; // VIP
+        var playUrl = d['data']?['play_backup_url']?.toString();
+        if (playUrl == null || !playUrl.startsWith('http')) {
+          playUrl = d['data']?['play_url']?.toString();
+        }
+        if (playUrl != null && playUrl.startsWith('http')) return playUrl;
+      }
+    } catch (_) {}
+    // 降级：原方式
     try {
       final url = 'http://trackercdn.kugou.com/i/v2/?cmd=25&hash=${song.id}&behavior=play&appid=1005&mid=0&userid=0&version=0&vipType=0';
       final resp = await http.get(Uri.parse(url), headers: _h()).timeout(const Duration(seconds: 5));
@@ -293,16 +311,6 @@ class KugouSource extends MusicSource {
           final urlStr = urlList[0]?.toString();
           if (urlStr != null && urlStr.startsWith('http')) return urlStr;
         }
-      }
-    } catch (_) {}
-    // 酷狗getdata API降级
-    try {
-      final url = 'http://www.kugou.com/yy/index.php?r=play/getdata&hash=${song.id}';
-      final resp = await http.get(Uri.parse(url), headers: _h()).timeout(const Duration(seconds: 5));
-      if (resp.statusCode == 200) {
-        final d = jsonDecode(resp.body);
-        final playUrl = d['data']?['play_url']?.toString();
-        if (playUrl != null && playUrl.startsWith('http')) return playUrl;
       }
     } catch (_) {}
     return null;
@@ -431,7 +439,25 @@ class MiguSource extends MusicSource {
   }
 
   @override Future<String?> getPlayUrl(OnlineSong song) async {
-    // 咪咕APP接口获取播放地址
+    // LX Music方式：MIGUM2.0 strategy接口
+    try {
+      final url = 'https://app.c.nf.migu.cn/MIGUM2.0/strategy/listen-url/v2.2?netType=01&resourceType=E&songId=${song.id}&toneFlag=HQ';
+      final resp = await http.get(Uri.parse(url), headers: {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36',
+        'Referer': 'https://app.c.nf.migu.cn/',
+        'channel': '0146951',
+        'uid': '0',
+      }).timeout(const Duration(seconds: 8));
+      if (resp.statusCode == 200) {
+        final d = jsonDecode(resp.body);
+        var playUrl = d['data']?['url']?.toString();
+        if (playUrl != null) {
+          if (playUrl.startsWith('//')) playUrl = 'https:$playUrl';
+          return playUrl.replaceAll('+', '%2B').split('?')[0];
+        }
+      }
+    } catch (_) {}
+    // 降级：旧方式
     try {
       final url = 'https://app.pd.nf.migu.cn/MIGUM3.0/v1.0/content/sub/listenSong.do?toneFlag=HQ&songId=${song.id}';
       final resp = await http.get(Uri.parse(url), headers: {
@@ -444,7 +470,6 @@ class MiguSource extends MusicSource {
         if (playUrl != null && playUrl.startsWith('http')) return playUrl;
       }
     } catch (_) {}
-
     // 降级：MiguWeb接口
     try {
       final url = 'https://c.musicapp.migu.cn/MIGUM2.0/v1.0/content/resource/listen.do?copyrightId=${song.id}&netType=01';
