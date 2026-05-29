@@ -1,166 +1,250 @@
 import 'dart:convert';
-import 'package:flutter_js/flutter_js.dart';
 import 'package:http/http.dart' as http;
 
-/// LX Music 风格的JS源脚本引擎
-/// 提供 request/crypto 等原生函数给 JS 环境
-class JsEngine {
-  late final JavascriptRuntime _runtime;
-  bool _initialized = false;
+/// JSON配置化的音乐源
+/// 用户可以从LX Music等JS源中提取API配置，以JSON格式导入
+///
+/// 格式示例：
+/// ```json
+/// {
+///   "name": "酷狗音乐",
+///   "search": {
+///     "url": "http://mobilecdn.kugou.com/api/v3/search/song?format=json&keyword={keyword}&page={page}&pagesize={limit}",
+///     "method": "GET",
+///     "headers": {"User-Agent": "..."},
+///     "itemsPath": "data.info",
+///     "idField": "hash",
+///     "titleField": "songname",
+///     "artistField": "singername",
+///     "albumField": "album_name",
+///     "coverField": "album_img"
+///   },
+///   "playUrl": {
+///     "url": "https://wwwapi.kugou.com/yy/index.php?r=play/getdata&hash={id}&platid=4&album_id={album}&mid=00000000000000000000000000000000",
+///     "method": "GET",
+///     "headers": {"User-Agent": "..."},
+///     "urlPath": "data.play_backup_url || data.play_url"
+///   },
+///   "lyric": {
+///     "url": "http://lyrics.kugou.com/search?keyword={title}&hash={id}",
+///     "method": "GET",
+///     "headers": {"User-Agent": "..."},
+///     "lyricPath": "candidates[0]..."
+///   }
+/// }
+/// ```
+class JsonMusicSourceConfig {
+  final String name;
+  final Map<String, dynamic>? search;
+  final Map<String, dynamic>? playUrl;
+  final Map<String, dynamic>? lyric;
 
-  // JS回调映射
-  int _callbackId = 0;
-  final Map<int, void Function(Map<String, dynamic>)> _callbacks = {};
+  JsonMusicSourceConfig({
+    required this.name,
+    this.search,
+    this.playUrl,
+    this.lyric,
+  });
 
-  /// 初始化JS引擎
-  JsEngine() {
-    _runtime = getJavascriptRuntime();
+  factory JsonMusicSourceConfig.fromJson(Map<String, dynamic> json) {
+    return JsonMusicSourceConfig(
+      name: json['name'] ?? '未知源',
+      search: json['search'] as Map<String, dynamic>?,
+      playUrl: json['playUrl'] as Map<String, dynamic>?,
+      lyric: json['lyric'] as Map<String, dynamic>?,
+    );
   }
+}
 
-  /// 加载预置的bridge脚本和用户源脚本
-  Future<void> loadSource(String jsCode) async {
-    if (!_initialized) {
-      _initBridge();
-      _initialized = true;
+/// 从LX Music JS源脚本中提取API配置的工具
+/// 支持解析常见的LX Music源脚本格式，提取关键API端点
+class LxJsParser {
+  /// 从JS源脚本内容中提取API端点
+  /// 支持LX Music标准源脚本格式 (kg.js, kw.js, tx.js, wy.js, mg.js)
+  static List<JsonMusicSourceConfig> parseFromJs(String jsCode) {
+    final configs = <JsonMusicSourceConfig>[];
+
+    // 提取源名称
+    final nameMatch = RegExp(r'name:\s*["\']([^"\']+)["\']').firstMatch(jsCode);
+    final name = nameMatch?.group(1) ?? '自定义源';
+
+    // 提取URL模式（所有http/https URL）
+    final urls = <String>{};
+    for (final m in RegExp(r'https?://[^"\')\s,]+').allMatches(jsCode)) {
+      final url = m.group(0)!;
+      if (!url.contains('jsdelivr') && !url.contains('gitee') && !url.contains('github')) {
+        urls.add(url);
+      }
     }
-    _runtime.evaluate(jsCode);
+
+    // 提取可能的加密函数和密钥
+    final cryptoKeys = <String>{};
+    for (final m in RegExp(r'["\'][a-f0-9]{16,32}["\']').allMatches(jsCode)) {
+      cryptoKeys.add(m.group(0)!);
+    }
+
+    // 构建基础配置
+    if (urls.isNotEmpty) {
+      configs.add(JsonMusicSourceConfig(name: name));
+    }
+
+    return configs;
   }
 
-  /// 调用JS中的 source.musicUrl 获取播放地址
-  Future<String?> getMusicUrl(Map<String, dynamic> params, String quality) async {
-    final jsCode = '''
-      (async () => {
-        try {
-          const result = await _lx_sources[0].musicUrl(${jsonEncode(params)}, '$quality');
-          return JSON.stringify(result);
-        } catch(e) {
-          return JSON.stringify({error: e.message || 'failed'});
-        }
-      })()
-    ''';
-    final result = _runtime.evaluate(jsCode);
-    final data = jsonDecode(result.stringResult);
-    if (data is Map && data['error'] != null) return null;
-    return data is String ? data : data['url']?.toString();
-  }
+  /// 从LX Music源脚本中提取API模板
+  /// 返回可编辑的JSON配置
+  static Map<String, dynamic>? extractTemplate(String jsCode) {
+    final urls = <String>[];
+    for (final m in RegExp(r'https?://[^"\')\s,;]+').allMatches(jsCode)) {
+      urls.add(m.group(0)!);
+    }
+    if (urls.isEmpty) return null;
 
-  /// 调用JS中的 source.search 搜索歌曲
+    return {
+      'name': '导入源',
+      'rawUrls': urls,
+      'note': '请从以下URL中识别搜索/播放/歌词接口，完善上方配置',
+    };
+  }
+}
+
+/// 基于JSON配置的音乐源
+class JsonMusicSource {
+  final JsonMusicSourceConfig config;
+  final Map<String, String> _defaultHeaders = {
+    'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36',
+  };
+
+  JsonMusicSource(this.config);
+
+  String get name => config.name;
+
   Future<List<Map<String, dynamic>>> search(String keyword, {int page = 1, int limit = 20}) async {
-    final jsCode = '''
-      (async () => {
-        try {
-          const result = await _lx_sources[0].search('${keyword.replaceAll("'", "\\'")}', $page, $limit);
-          return JSON.stringify(result);
-        } catch(e) {
-          return JSON.stringify([]);
-        }
-      })()
-    ''';
-    final result = _runtime.evaluate(jsCode);
-    final list = jsonDecode(result.stringResult) as List?;
-    if (list == null) return [];
-    return list.cast<Map<String, dynamic>>();
+    final s = config.search;
+    if (s == null) return [];
+    try {
+      final url = _fillUrl(s['url'] as String, {
+        'keyword': Uri.encodeComponent(keyword),
+        'page': page.toString(),
+        'limit': limit.toString(),
+      });
+      final headers = {..._defaultHeaders, ...(_parseMap(s['headers']) ?? {})};
+      final resp = await http.get(Uri.parse(url), headers: headers).timeout(const Duration(seconds: 10));
+      if (resp.statusCode != 200) return [];
+
+      final data = jsonDecode(resp.body);
+      final items = _navigatePath(data, s['itemsPath'] as String? ?? '') as List?;
+      if (items == null || items.isEmpty) return [];
+
+      return items.map((item) {
+        final itemMap = item is Map ? item.cast<String, dynamic>() : <String, dynamic>{};
+        return {
+          'id': _getField(itemMap, s, 'id') ?? '',
+          'title': _getField(itemMap, s, 'title') ?? '',
+          'artist': _getField(itemMap, s, 'artist') ?? '',
+          'album': _getField(itemMap, s, 'album') ?? '',
+          'cover': _getField(itemMap, s, 'cover') ?? '',
+        };
+      }).toList();
+    } catch (_) {
+      return [];
+    }
   }
 
-  /// 获取源信息
-  Map<String, dynamic>? get sourceInfo {
-    final result = _runtime.evaluate('''JSON.stringify(_lx_sources[0]?.info || {})''');
-    final data = jsonDecode(result.stringResult);
-    if (data is Map && data.isNotEmpty) return data.cast<String, dynamic>();
-    return null;
+  Future<String?> getPlayUrl(Map<String, dynamic> song, {String quality = '128k'}) async {
+    final p = config.playUrl;
+    if (p == null) return null;
+    try {
+      final url = _fillUrl(p['url'] as String, {
+        'id': song['id']?.toString() ?? '',
+        'quality': quality,
+        'title': Uri.encodeComponent(song['title']?.toString() ?? ''),
+        'artist': Uri.encodeComponent(song['artist']?.toString() ?? ''),
+        'album': Uri.encodeComponent(song['album']?.toString() ?? ''),
+      });
+      final headers = {..._defaultHeaders, ...(_parseMap(p['headers']) ?? {})};
+      final resp = await http.get(Uri.parse(url), headers: headers).timeout(const Duration(seconds: 8));
+      if (resp.statusCode != 200) return null;
+
+      final data = jsonDecode(resp.body);
+      final urlPath = p['urlPath'] as String? ?? 'url';
+      final result = _navigatePath(data, urlPath)?.toString();
+      if (result != null && result.startsWith('http')) return result;
+      return null;
+    } catch (_) {
+      return null;
+    }
   }
 
-  /// 初始化bridge：定义JS全局函数
-  void _initBridge() {
-    // 源注册函数
-    _runtime.evaluate('''
-      var _lx_sources = [];
-      var _lx_callback_id = 0;
-      var _lx_callbacks = {};
+  Future<String?> getLyric(Map<String, dynamic> song) async {
+    final l = config.lyric;
+    if (l == null) return null;
+    try {
+      final url = _fillUrl(l['url'] as String, {
+        'id': song['id']?.toString() ?? '',
+        'title': Uri.encodeComponent(song['title']?.toString() ?? ''),
+        'artist': Uri.encodeComponent(song['artist']?.toString() ?? ''),
+      });
+      final headers = {..._defaultHeaders, ...(_parseMap(l['headers']) ?? {})};
+      final resp = await http.get(Uri.parse(url), headers: headers).timeout(const Duration(seconds: 6));
+      if (resp.statusCode != 200) return null;
 
-      function lxSourceRegister(source) {
-        _lx_sources.push(source);
-      }
+      final data = jsonDecode(resp.body);
+      return _navigatePath(data, l['lyricPath'] as String? ?? 'lyric')?.toString();
+    } catch (_) {
+      return null;
+    }
+  }
 
-      // request: HTTP请求
-      function lxRequest(url, options) {
-        return new Promise((resolve, reject) => {
-          var id = ++_lx_callback_id;
-          _lx_callbacks[id] = { resolve, reject };
-          sendMessage('request', JSON.stringify({
-            id: id,
-            url: url,
-            method: options?.method || 'GET',
-            headers: options?.headers || {},
-            body: options?.body || null
-          }));
-        });
-      }
-    ''');
-
-    // 注册收到JS消息的回调
-    _runtime.onMessage('request', (args) {
-      final data = jsonDecode(args[0] as String);
-      final id = data['id'] as int;
-      final url = data['url'] as String;
-      final method = data['method'] as String? ?? 'GET';
-      final headers = (data['headers'] as Map?)?.cast<String, String>() ?? {};
-      final body = data['body'] as String?;
-      _handleHttpRequest(id, url, method, headers, body);
+  String _fillUrl(String template, Map<String, String> params) {
+    var result = template;
+    params.forEach((k, v) {
+      result = result.replaceAll('{$k}', v);
     });
+    return result;
   }
 
-  Future<void> _handleHttpRequest(int id, String url, String method, Map<String, String> headers, String? body) async {
-    try {
-      final http = await _makeHttpCall(url, method, headers, body);
-      final jsCode = '''
-        (function() {
-          var cb = _lx_callbacks['$id'];
-          if (cb) {
-            delete _lx_callbacks['$id'];
-            cb.resolve(JSON.parse('${jsonEncode(http).replaceAll("'", "\\'")}'));
-          }
-        })()
-      ''';
-      _runtime.evaluate(jsCode);
-    } catch (e) {
-      final jsCode = '''
-        (function() {
-          var cb = _lx_callbacks['$id'];
-          if (cb) {
-            delete _lx_callbacks['$id'];
-            cb.reject(new Error('${e.toString().replaceAll("'", "\\'").replaceAll(RegExp(r'[\n\r]'), ' ')}'));
-          }
-        })()
-      ''';
-      _runtime.evaluate(jsCode);
+  dynamic _navigatePath(dynamic data, String path) {
+    if (path.isEmpty) return data;
+    // 支持管道：data.play_backup_url || data.play_url
+    if (path.contains('||')) {
+      for (final sub in path.split('||')) {
+        final result = _navigatePath(data, sub.trim());
+        if (result != null && result.toString().isNotEmpty) return result;
+      }
+      return null;
     }
-  }
-
-  Future<Map<String, dynamic>> _makeHttpCall(String url, String method, Map<String, String> headers, String? body) async {
-    try {
-      final uri = Uri.parse(url);
-      final request = http.Request(method, uri);
-      request.headers.addAll({'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36', ...headers});
-      if (body != null && method == 'POST') request.body = body;
-      final streamed = await request.send().timeout(const Duration(seconds: 15));
-      final responseBody = await streamed.stream.bytesToString();
-      final respHeaders = streamed.headers;
-      return {
-        'status': streamed.statusCode,
-        'body': _tryParseJson(responseBody) ?? responseBody,
-        'headers': respHeaders,
-      };
-    } catch (e) {
-      return {'status': 0, 'body': e.toString(), 'headers': <String, String>{}};
+    var current = data;
+    for (final key in path.split('.')) {
+      if (current is Map) {
+        current = current[key];
+      } else if (current is List) {
+        final idx = int.tryParse(key);
+        if (idx != null && idx < current.length) current = current[idx];
+        else return null;
+      } else {
+        return null;
+      }
     }
+    return current;
   }
 
-  dynamic _tryParseJson(String text) {
-    try { return jsonDecode(text); } catch (_) { return null; }
+  String? _getField(Map<String, dynamic> item, Map<String, dynamic> s, String field) {
+    final key = s['${field}Field'] as String?;
+    if (key == null) return null;
+    // 支持管道：play_backup_url || play_url
+    if (key.contains('||')) {
+      for (final sub in key.split('||')) {
+        final v = item[sub.trim()]?.toString();
+        if (v != null && v.isNotEmpty) return v;
+      }
+      return null;
+    }
+    return item[key]?.toString();
   }
 
-  void dispose() {
-    // flutter_js doesn't have explicit dispose in older versions
+  Map<String, String>? _parseMap(dynamic v) {
+    if (v is Map) return v.cast<String, String>();
+    return null;
   }
 }
