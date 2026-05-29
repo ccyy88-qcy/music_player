@@ -46,8 +46,7 @@ jobs:
           mkdir -p tmp_project/android/app/src/main/kotlin/com/alee/music_player
           cp android/app/src/main/kotlin/com/alee/music_player/*.kt tmp_project/android/app/src/main/kotlin/com/alee/music_player/
           # Fix Kotlin JVM target for flutter_js compatibility
-          echo 'subprojects { tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> { compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }' >> tmp_project/android/build.gradle.kts
-          sed -i 's/JavaVersion.VERSION_11/JavaVersion.VERSION_17/g' tmp_project/android/app/build.gradle.kts
+          echo 'subprojects { tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> { compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) }; tasks.withType<JavaCompile> { sourceCompatibility = "17"; targetCompatibility = "17" } }' >> tmp_project/android/build.gradle.kts
           mv tmp_project music_player_app
           cd music_player_app
 
