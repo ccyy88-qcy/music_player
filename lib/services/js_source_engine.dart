@@ -246,7 +246,8 @@ var lxCrypto = {
           return JSON.stringify({error: 'source not found'});
         })()
       ''');
-      final data = jsonDecode(result ?? '{}');
+      final resultStr = result?.toString() ?? '{}';
+      final data = jsonDecode(resultStr);
       if (data is Map && data['url'] != null) return data['url'].toString();
       return null;
     } catch (_) { return null; }
