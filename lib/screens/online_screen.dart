@@ -47,10 +47,37 @@ class _OnlineScreenState extends State<OnlineScreen> with SingleTickerProviderSt
   int _batchTotal = 0;
   List<DownloadTask> _batchTasks = [];
 
+  // JS源
+  List<String> _jsSourceNames = [];
+  String? _activeJsSource;
+
   @override
   void initState() {
     super.initState();
     _initSource();
+    _loadJsSources();
+  }
+
+  Future<void> _loadJsSources() async {
+    final store = await StorageManager.instance;
+    final jsSources = store.getJsSources();
+    final names = jsSources.map((s) {
+      final parts = s.split('|||');
+      return parts.isNotEmpty ? parts[0] : 'JS源';
+    }).toList();
+    if (mounted) setState(() => _jsSourceNames = names);
+  }
+
+  void _activateJsSource(String name) {
+    setState(() => _activeJsSource = name == _activeJsSource ? null : name);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_activeJsSource == name ? '✅ JS源已激活: $name' : '已关闭JS源'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   Future<void> _initSource() async {
@@ -430,11 +457,11 @@ class _OnlineScreenState extends State<OnlineScreen> with SingleTickerProviderSt
           if (_chartMode)
             IconButton(icon: const Icon(Icons.arrow_back_rounded, color: Colors.white70), onPressed: _exitChartMode),
           Expanded(child: Container(
-            height: 42,
-            decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(21)),
+            height: 34,
+            decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(17)),
             child: TextField(
               controller: _searchCtrl,
-              style: const TextStyle(color: Colors.white, fontSize: 15),
+              style: const TextStyle(color: Colors.white, fontSize: 13),
               decoration: InputDecoration(
                 hintText: _chartMode ? '搜索排行榜歌曲...' : '🔍 搜索在线歌曲...',
                 hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.35)),
@@ -464,6 +491,14 @@ class _OnlineScreenState extends State<OnlineScreen> with SingleTickerProviderSt
             _chipBtn('🎵 QQ音乐', () => _enterChartMode('qq')),
             const SizedBox(width: 6),
             _chipBtn('🎧 酷狗', () => _enterChartMode('kugou')),
+            // JS源脚本
+            if (_jsSourceNames.isNotEmpty) ...[
+              const SizedBox(width: 6),
+              ..._jsSourceNames.map((name) => Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: _chipBtn('⚡ $name', () => _activateJsSource(name)),
+              )),
+            ],
             const Spacer(),
             if (_results.isNotEmpty)
               GestureDetector(onTap: () { setState(() => _selectMode = true); },
@@ -596,13 +631,16 @@ class _OnlineScreenState extends State<OnlineScreen> with SingleTickerProviderSt
           return GestureDetector(
             onLongPress: () { setState(() { _selectMode = true; _selectedIds.add('${s.id}_${s.source}'); }); },
             child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
               decoration: BoxDecoration(
                 color: isSelected ? Colors.pink.withValues(alpha: 0.1) : (isPlay ? Colors.pink.withValues(alpha: 0.08) : Colors.white.withValues(alpha: 0.03)),
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(8),
                 border: isSelected ? Border.all(color: Colors.pink.withValues(alpha: 0.4)) : (isPlay ? Border.all(color: Colors.pink.withValues(alpha: 0.3)) : null),
               ),
               child: ListTile(
+                dense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                visualDensity: VisualDensity.compact,
                 onTap: _selectMode ? () {
                   setState(() {
                     final key = '${s.id}_${s.source}';
@@ -612,32 +650,32 @@ class _OnlineScreenState extends State<OnlineScreen> with SingleTickerProviderSt
                   });
                 } : () => _playChartList(_chartSongs, i),
                 leading: Stack(children: [
-                  Container(width: 44, height: 44,
-                    decoration: BoxDecoration(borderRadius: BorderRadius.circular(8),
+                  Container(width: 36, height: 36,
+                    decoration: BoxDecoration(borderRadius: BorderRadius.circular(6),
                       gradient: LinearGradient(colors: isPlay ? [Colors.pink.shade400, Colors.purple.shade400] : [Colors.blueGrey.shade700, Colors.blueGrey.shade800])),
-                    child: Center(child: isDL ? const Icon(Icons.downloading_rounded, color: Colors.white70, size: 20) : Text('${s.rank}', style: TextStyle(color: Colors.white.withValues(alpha: s.rank <= 3 ? 1.0 : 0.6), fontSize: s.rank <= 3 ? 18 : 14, fontWeight: s.rank <= 3 ? FontWeight.bold : FontWeight.normal))),
+                    child: Center(child: isDL ? const Icon(Icons.downloading_rounded, color: Colors.white70, size: 16) : Text('${s.rank}', style: TextStyle(color: Colors.white.withValues(alpha: s.rank <= 3 ? 1.0 : 0.6), fontSize: s.rank <= 3 ? 16 : 12, fontWeight: s.rank <= 3 ? FontWeight.bold : FontWeight.normal))),
                   ),
                   if (_selectMode)
-                    Positioned(top: 0, right: 0, child: Icon(isSelected ? Icons.check_circle : Icons.circle_outlined, color: isSelected ? Colors.pink : Colors.white38, size: 16)),
+                    Positioned(top: 0, right: 0, child: Icon(isSelected ? Icons.check_circle : Icons.circle_outlined, color: isSelected ? Colors.pink : Colors.white38, size: 14)),
                 ]),
                 title: Row(children: [
-                  Expanded(child: Text(s.title, style: TextStyle(color: isPlay ? Colors.pink.shade300 : Colors.white, fontSize: 13, fontWeight: isPlay ? FontWeight.w600 : FontWeight.normal), maxLines: 1, overflow: TextOverflow.ellipsis)),
-                  if (s.fee > 0) Container(margin: const EdgeInsets.only(left: 6), padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1), decoration: BoxDecoration(color: s.feeColor.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(4), border: Border.all(color: s.feeColor.withValues(alpha: 0.3))), child: Text(s.feeLabel, style: TextStyle(color: s.feeColor, fontSize: 9, fontWeight: FontWeight.w600))),
+                  Expanded(child: Text(s.title, style: TextStyle(color: isPlay ? Colors.pink.shade300 : Colors.white, fontSize: 12, fontWeight: isPlay ? FontWeight.w600 : FontWeight.normal), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                  if (s.fee > 0) Container(margin: const EdgeInsets.only(left: 4), padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0), decoration: BoxDecoration(color: s.feeColor.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(3), border: Border.all(color: s.feeColor.withValues(alpha: 0.3))), child: Text(s.feeLabel, style: TextStyle(color: s.feeColor, fontSize: 8, fontWeight: FontWeight.w600))),
                 ]),
                 subtitle: Row(children: [
-                  Container(padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1), margin: const EdgeInsets.only(right: 6), decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(4)), child: Text(s.source.toUpperCase(), style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 9, fontWeight: FontWeight.w600))),
+                  Container(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0), margin: const EdgeInsets.only(right: 4), decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(3)), child: Text(s.source.toUpperCase(), style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 8, fontWeight: FontWeight.w600))),
                   if (s.duration != null && s.duration! > 0) ...[
-                    Icon(Icons.access_time_rounded, size: 10, color: Colors.white.withValues(alpha: 0.2)),
+                    Icon(Icons.access_time_rounded, size: 9, color: Colors.white.withValues(alpha: 0.2)),
                     const SizedBox(width: 2),
-                    Text('${(s.duration! / 60000).floor()}:${((s.duration! % 60000) / 1000).floor().toString().padLeft(2, "0")}', style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 10)),
-                    const SizedBox(width: 8),
+                    Text('${(s.duration! / 60000).floor()}:${((s.duration! % 60000) / 1000).floor().toString().padLeft(2, "0")}', style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 9)),
+                    const SizedBox(width: 6),
                   ],
-                  Expanded(child: Text(s.artist, style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                  Expanded(child: Text(s.artist, style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 10), maxLines: 1, overflow: TextOverflow.ellipsis)),
                 ]),
                 trailing: _selectMode ? null : Row(mainAxisSize: MainAxisSize.min, children: [
-                  if (isPlay) const Icon(Icons.volume_up_rounded, color: Colors.pink, size: 20)
-                  else IconButton(icon: const Icon(Icons.download_rounded, color: Colors.white30, size: 22), onPressed: isDL ? null : () => _download(s), padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 36)),
-                  IconButton(icon: Icon(Icons.play_circle_outline_rounded, color: isPlay ? Colors.pink : Colors.white38, size: 22), onPressed: () => _playChartList(_chartSongs, i), padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 36)),
+                  if (isPlay) const Icon(Icons.volume_up_rounded, color: Colors.pink, size: 16)
+                  else IconButton(icon: const Icon(Icons.download_rounded, color: Colors.white30, size: 18), onPressed: isDL ? null : () => _download(s), padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 30)),
+                  IconButton(icon: Icon(Icons.play_circle_outline_rounded, color: isPlay ? Colors.pink : Colors.white38, size: 18), onPressed: () => _playChartList(_chartSongs, i), padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 30)),
                 ]),
               ),
             ),
@@ -660,13 +698,16 @@ class _OnlineScreenState extends State<OnlineScreen> with SingleTickerProviderSt
       return GestureDetector(
         onLongPress: () { setState(() { _selectMode = true; _selectedIds.add('${s.id}_${s.source}'); }); },
         child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
           decoration: BoxDecoration(
             color: isSelected ? Colors.pink.withValues(alpha: 0.1) : (isPlay ? Colors.pink.withValues(alpha: 0.08) : Colors.white.withValues(alpha: 0.03)),
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(8),
             border: isSelected ? Border.all(color: Colors.pink.withValues(alpha: 0.4)) : (isPlay ? Border.all(color: Colors.pink.withValues(alpha: 0.3)) : null),
           ),
           child: ListTile(
+            dense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+            visualDensity: VisualDensity.compact,
             onTap: _selectMode ? () {
               setState(() {
                 final key = '${s.id}_${s.source}';
@@ -675,25 +716,25 @@ class _OnlineScreenState extends State<OnlineScreen> with SingleTickerProviderSt
                 if (_selectedIds.isEmpty) _selectMode = false;
               });
             } : () => _playOnline(s),
-            leading: Container(width: 44, height: 44, decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), gradient: LinearGradient(colors: isPlay ? [Colors.pink.shade400, Colors.purple.shade400] : [Colors.blueGrey.shade700, Colors.blueGrey.shade800])), child: Icon(isDL ? Icons.downloading_rounded : (_selectMode ? (isSelected ? Icons.check_circle : Icons.circle_outlined) : Icons.music_note_rounded), color: Colors.white.withValues(alpha: 0.7), size: 22)),
+            leading: Container(width: 36, height: 36, decoration: BoxDecoration(borderRadius: BorderRadius.circular(6), gradient: LinearGradient(colors: isPlay ? [Colors.pink.shade400, Colors.purple.shade400] : [Colors.blueGrey.shade700, Colors.blueGrey.shade800])), child: Icon(isDL ? Icons.downloading_rounded : (_selectMode ? (isSelected ? Icons.check_circle : Icons.circle_outlined) : Icons.music_note_rounded), color: Colors.white.withValues(alpha: 0.7), size: 18)),
             title: Row(children: [
-              Expanded(child: Text(s.title, style: TextStyle(color: isPlay ? Colors.pink.shade300 : Colors.white, fontSize: 13, fontWeight: isPlay ? FontWeight.w600 : FontWeight.normal), maxLines: 1, overflow: TextOverflow.ellipsis)),
-              if (s.fee > 0) Container(margin: const EdgeInsets.only(left: 6), padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1), decoration: BoxDecoration(color: s.feeColor.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(4), border: Border.all(color: s.feeColor.withValues(alpha: 0.3))), child: Text(s.feeLabel, style: TextStyle(color: s.feeColor, fontSize: 9, fontWeight: FontWeight.w600))),
+              Expanded(child: Text(s.title, style: TextStyle(color: isPlay ? Colors.pink.shade300 : Colors.white, fontSize: 12, fontWeight: isPlay ? FontWeight.w600 : FontWeight.normal), maxLines: 1, overflow: TextOverflow.ellipsis)),
+              if (s.fee > 0) Container(margin: const EdgeInsets.only(left: 4), padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0), decoration: BoxDecoration(color: s.feeColor.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(3), border: Border.all(color: s.feeColor.withValues(alpha: 0.3))), child: Text(s.feeLabel, style: TextStyle(color: s.feeColor, fontSize: 8, fontWeight: FontWeight.w600))),
             ]),
             subtitle: Row(children: [
-              Container(padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1), margin: const EdgeInsets.only(right: 6), decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(4)), child: Text(s.source.toUpperCase(), style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 9, fontWeight: FontWeight.w600))),
+              Container(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0), margin: const EdgeInsets.only(right: 4), decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(3)), child: Text(s.source.toUpperCase(), style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 8, fontWeight: FontWeight.w600))),
               if (s.duration != null && s.duration! > 0) ...[
-                Icon(Icons.access_time_rounded, size: 10, color: Colors.white.withValues(alpha: 0.2)),
+                Icon(Icons.access_time_rounded, size: 9, color: Colors.white.withValues(alpha: 0.2)),
                 const SizedBox(width: 2),
-                Text('${(s.duration! / 60000).floor()}:${((s.duration! % 60000) / 1000).floor().toString().padLeft(2, "0")}', style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 10)),
-                const SizedBox(width: 8),
+                Text('${(s.duration! / 60000).floor()}:${((s.duration! % 60000) / 1000).floor().toString().padLeft(2, "0")}', style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 9)),
+                const SizedBox(width: 6),
               ],
-              Expanded(child: Text(s.artist, style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis)),
+              Expanded(child: Text(s.artist, style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 10), maxLines: 1, overflow: TextOverflow.ellipsis)),
             ]),
             trailing: _selectMode ? null : Row(mainAxisSize: MainAxisSize.min, children: [
-              if (isPlay) const Icon(Icons.volume_up_rounded, color: Colors.pink, size: 20)
-              else IconButton(icon: const Icon(Icons.download_rounded, color: Colors.white30, size: 22), onPressed: isDL ? null : () => _download(s), padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 36)),
-              IconButton(icon: Icon(Icons.play_circle_outline_rounded, color: isPlay ? Colors.pink : Colors.white38, size: 22), onPressed: () => _playOnline(s), padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 36)),
+              if (isPlay) const Icon(Icons.volume_up_rounded, color: Colors.pink, size: 16)
+              else IconButton(icon: const Icon(Icons.download_rounded, color: Colors.white30, size: 18), onPressed: isDL ? null : () => _download(s), padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 30)),
+              IconButton(icon: Icon(Icons.play_circle_outline_rounded, color: isPlay ? Colors.pink : Colors.white38, size: 18), onPressed: () => _playOnline(s), padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 30)),
             ]),
           ),
         ),
