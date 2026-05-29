@@ -3,6 +3,7 @@ import 'dart:io';
 import '../services/storage_manager.dart';
 import '../services/music_scanner.dart';
 import '../services/online_music_service.dart';
+import '../services/js_source_engine.dart';
 import '../main.dart' show AppColors, audioHandler;
 
 class SettingsScreen extends StatefulWidget {
@@ -516,17 +517,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
     if (jsContent.isEmpty) return;
 
-    final sources = parseJsSource(jsContent);
-    if (sources.isEmpty) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('未能从文件中提取API地址'), backgroundColor: Colors.orange));
-      return;
-    }
+    // 保存JS源脚本到本地（WebView引擎运行时加载）
+    try {
+      // 提取源名称
+      String srcName = '自定义JS源';
+      final nameMatch = RegExp(r'''["'']name["'']\s*[:=]\s*["'']([^"'']+)["'']''').firstMatch(jsContent);
+      if (nameMatch != null) srcName = nameMatch.group(1)!;
 
-    for (final s in sources) {
-      await _store.addMusicSource(s['name']!, s['url']!);
+      await _store.addJsSource(srcName, jsContent);
+
+      // 尝试加载到WebView引擎
+      try {
+        await JsEngineManager.instance.loadJsFile(jsContent);
+      } catch (_) {}
+
+      _refreshSources();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('✅ 已导入JS源: $srcName'), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('导入失败: $e'), backgroundColor: Colors.red),
+        );
+      }
     }
-    _refreshSources();
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('✅ 已导入 ${sources.length} 个源'), backgroundColor: Colors.green));
   }
 
   Future<void> _scanForSourceFiles() async {

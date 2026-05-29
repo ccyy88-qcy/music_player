@@ -18,6 +18,7 @@ class StorageManager {
   static const _keyMusicSources = 'music_sources';
   static const _keyRecentSongs = 'recent_songs'; // 自定义音乐源JSON列表
   static const _keyOverlayEnabled = 'overlay_enabled';
+  static const _keyJsSources = 'js_sources'; // 本地JS源脚本
 
   static StorageManager? _instance;
   late SharedPreferences _prefs;
@@ -183,6 +184,28 @@ class StorageManager {
   bool get overlayEnabled => _prefs.getBool(_keyOverlayEnabled) ?? true;
   Future<void> setOverlayEnabled(bool v) async {
     await _prefs.setBool(_keyOverlayEnabled, v);
+  }
+
+  // ─────────── JS源脚本 ───────────
+
+  List<String> getJsSources() {
+    final list = _prefs.getStringList(_keyJsSources);
+    if (list == null || list.isEmpty) return [];
+    return list;
+  }
+
+  Future<void> addJsSource(String name, String jsContent) async {
+    final sources = getJsSources();
+    sources.add('$name|||$jsContent');
+    await _prefs.setStringList(_keyJsSources, sources);
+  }
+
+  Future<void> removeJsSource(int index) async {
+    final sources = getJsSources();
+    if (index >= 0 && index < sources.length) {
+      sources.removeAt(index);
+      await _prefs.setStringList(_keyJsSources, sources);
+    }
   }
 
   // ─────────── 音乐源管理 ───────────
