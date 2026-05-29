@@ -267,65 +267,62 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     ]);
   }
 
-  // ── 热门推荐（榜单） ──
+  // ── 热门推荐（折叠式） ──
+  bool _showHot = false;
+
   Widget _hotSection() {
     if (_chartLoading || _hotSongs.isEmpty) return const SizedBox.shrink();
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-        child: Row(children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(gradient: LinearGradient(colors: [AppColors.orange, AppColors.red]), borderRadius: BorderRadius.circular(6)),
-            child: const Text('HOT', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w700)),
-          ),
-          const SizedBox(width: 8),
-          const Text('热门推荐', style: TextStyle(color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.w700)),
-          const Spacer(),
-          GestureDetector(onTap: () => _tabCtrl.animateTo(3),
-            child: Text('更多 >', style: TextStyle(color: AppColors.orange.withValues(alpha: 0.7), fontSize: 12))),
-        ]),
-      ),
-      SizedBox(
-        height: 230,
-        child: ListView.builder(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          itemCount: _hotSongs.length > 10 ? 10 : _hotSongs.length,
-          itemBuilder: (_, i) {
-            final s = _hotSongs[i];
-            return GestureDetector(
-              onTap: () => _playChart(s, i),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                child: Row(children: [
-                  // 排名
-                  Container(
-                    width: 22, height: 22,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: s.rank <= 3
-                          ? (s.rank == 1 ? AppColors.yellow : (s.rank == 2 ? AppColors.orange : AppColors.red))
-                          : Colors.transparent,
-                    ),
-                    child: Center(child: Text('${s.rank}',
-                      style: TextStyle(
-                        color: s.rank <= 3 ? Colors.black : AppColors.textMuted,
-                        fontSize: 11, fontWeight: FontWeight.w700),
-                    )),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(s.title, style: const TextStyle(color: AppColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w500),
-                      maxLines: 1, overflow: TextOverflow.ellipsis),
-                    Text(s.artist, style: const TextStyle(color: AppColors.textMuted, fontSize: 11),
-                      maxLines: 1, overflow: TextOverflow.ellipsis),
-                  ])),
-                ]),
-              ),
-            );
-          },
+      GestureDetector(
+        onTap: () => setState(() => _showHot = !_showHot),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+          child: Row(children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(gradient: LinearGradient(colors: [AppColors.orange, AppColors.red]), borderRadius: BorderRadius.circular(4)),
+              child: const Text('HOT', style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w700)),
+            ),
+            const SizedBox(width: 6),
+            const Text('热门推荐', style: TextStyle(color: AppColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+            const Spacer(),
+            Icon(_showHot ? Icons.expand_less : Icons.expand_more, color: AppColors.textMuted, size: 16),
+          ]),
         ),
       ),
+      if (_showHot)
+        SizedBox(
+          height: 140,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            itemCount: _hotSongs.length > 10 ? 10 : _hotSongs.length,
+            itemBuilder: (_, i) {
+              final s = _hotSongs[i];
+              return GestureDetector(
+                onTap: () => _playChart(s, i),
+                child: Container(
+                  width: 90,
+                  margin: const EdgeInsets.only(right: 8),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Container(
+                      height: 90,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(8),
+                        gradient: LinearGradient(
+                          colors: s.rank <= 3 ? [AppColors.orange, AppColors.red, AppColors.yellow] : [AppColors.surfaceLight, AppColors.surfaceCard],
+                        ),
+                      ),
+                      child: Center(child: Text('${s.rank}', style: TextStyle(color: Colors.white.withValues(alpha: s.rank <= 3 ? 0.8 : 0.3), fontSize: s.rank <= 3 ? 28 : 20, fontWeight: FontWeight.bold))),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(s.title, style: const TextStyle(color: AppColors.textSecondary, fontSize: 10), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ]),
+                ),
+              );
+            },
+          ),
+        ),
     ]);
   }
 
@@ -382,7 +379,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     ]);
   }
 
-  // ── 本地列表 ──
+  // ── Android TV 模式顶部 ──
   Widget _localList(MusicCategory cat, List<Color> colors) {
     final songs = _filteredSongs[cat] ?? [];
     final isDJ = cat == MusicCategory.dj;
