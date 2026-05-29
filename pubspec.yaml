@@ -17,6 +17,7 @@ dependencies:
   http: ^1.2.0
   pointycastle: ^3.9.1
   crypto: ^3.0.6
+  webview_flutter: ^4.10.0
 
 dev_dependencies:
   flutter_test:
